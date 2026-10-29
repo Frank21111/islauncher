@@ -189,7 +189,8 @@ class Launcher : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         val alreadyHome = hasWindowFocus() && intent.flags and Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT == 0
-        if (alreadyHome && !drawerOpen && !settingsOpen) homePresses++
+        // In-window overlays (Ajustes, the widget picker) keep the focus: home only closes them, like a dialog.
+        if (alreadyHome && !drawerOpen && !settingsOpen && popup == null) homePresses++
         settingsOpen = false
         closeAll()
     }

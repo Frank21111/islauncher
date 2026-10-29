@@ -246,7 +246,9 @@ fun LauncherScreen(l: Launcher) {
     MaterialTheme(colorScheme = novaColors()) {
         Box(Modifier.fillMaxSize()) {
             // Hidden, not removed, under Ajustes: its clear preview strips show the wallpaper, and pages and widgets keep their state.
-            Box(Modifier.graphicsLayer { alpha = if (l.settingsOpen) 0f else 1f }.then(if (l.settingsOpen) Modifier.clearAndSetSemantics {} else Modifier)) {
+            // The full-screen widget picker covers it too: TalkBack must not reach what is underneath.
+            val covered = l.settingsOpen || l.popup is Popup.Widgets
+            Box(Modifier.graphicsLayer { alpha = if (l.settingsOpen) 0f else 1f }.then(if (covered) Modifier.clearAndSetSemantics {} else Modifier)) {
                 Home(l, mover)
             }
             key(l.drawerResets) {
@@ -1180,11 +1182,20 @@ private fun WidgetPicker(l: Launcher, page: Int) {
             .sortedWith(compareBy({ fold(it.appLabel) }, { fold(it.name) }))
     }
     var query by remember { mutableStateOf("") }
-    PickerDialog(l, stringResource(R.string.widget_add), query, { query = it }) {
-        // Apps in the order of their best match.
-        for ((pkg, found) in search(widgets, query) { it.label }.groupBy { it.info.provider.packageName }) {
-            item(key = pkg) { PickerRow(found[0].icon, found[0].appLabel, onClick = null) }
-            items(found, key = { it.info.provider.flattenToString() }) { WidgetRow(l, page, it) }
+    // Full screen like Nova's, so several previews fit; the Surface takes every touch, and back closes it as any popup.
+    Surface(Modifier.fillMaxSize(), color = Color.Black, contentColor = MaterialTheme.colorScheme.onSurface) {
+        Column(Modifier.navigationBarsPadding().imePadding()) {
+            Bar(stringResource(R.string.widget_add)) { l.popup = null }
+            GatedHaptics(l) {
+                OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(16.dp), placeholder = { Text(stringResource(R.string.search)) }, singleLine = true)
+            }
+            LazyColumn(Modifier.weight(1f).padding(horizontal = 16.dp)) {
+                // Apps in the order of their best match.
+                for ((pkg, found) in search(widgets, query) { it.label }.groupBy { it.info.provider.packageName }) {
+                    item(key = pkg) { PickerRow(found[0].icon, found[0].appLabel, onClick = null) }
+                    items(found, key = { it.info.provider.flattenToString() }) { WidgetRow(l, page, it) }
+                }
+            }
         }
     }
 }
