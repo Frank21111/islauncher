@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- On Ui.kt's 24-unit glyph grid: HOUSE's roof as one bold line over TAP's dot, one silhouette for themed icons. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="2.6"
+        android:scaleY="2.6"
+        android:translateX="22.8"
+        android:translateY="22.8">
+        <path
+            android:pathData="M3.5,14.1L12,6.6L20.5,14.1"
+            android:strokeWidth="2.6"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M8.9,15.6a3.1,3.1 0,1 1,6.2 0a3.1,3.1 0,1 1,-6.2 0"
+            android:fillColor="#FFFFFFFF" />
+    </group>
+</vector>
