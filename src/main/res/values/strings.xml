@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">Launcher</string>
+
+    <!-- Shared -->
+    <string name="cancel">Cancel</string>
+    <string name="done">Done</string>
+    <string name="add">Add</string>
+    <string name="remove">Remove</string>
+    <string name="delete">Delete</string>
+    <string name="rename">Rename</string>
+    <string name="copy">Copy</string>
+    <string name="search">Search</string>
+    <string name="back">Back</string>
+    <string name="move_up">Move up</string>
+    <string name="move_down">Move down</string>
+    <string name="choose_file">Choose file</string>
+    <string name="settings">Settings</string>
+    <string name="home_screen">Home screen</string>
+    <string name="add_to_home_screen">Add to home screen</string>
+    <string name="poisons">Poisons</string>
+    <plurals name="count_pages">
+        <item quantity="one">%d page</item>
+        <item quantity="other">%d pages</item>
+    </plurals>
+    <plurals name="count_icons">
+        <item quantity="one">%d icon</item>
+        <item quantity="other">%d icons</item>
+    </plurals>
+    <plurals name="count_items">
+        <item quantity="one">%d item</item>
+        <item quantity="other">%d items</item>
+    </plurals>
+    <plurals name="count_apps">
+        <item quantity="one">%d app</item>
+        <item quantity="other">%d apps</item>
+    </plurals>
+
+    <!-- What could not be opened: "Couldn't open the calendar" -->
+    <string name="open_failed">Couldn\'t open %1$s</string>
+    <string name="open_target_wallpaper_picker">the wallpaper picker</string>
+    <string name="open_target_assistant">the assistant</string>
+    <string name="open_target_calendar">the calendar</string>
+    <string name="open_target_settings">Settings</string>
+
+    <!-- What an icon or gesture opens, in "Tap: none" and "Double tap: None" -->
+    <string name="target_none">none</string>
+    <string name="target_not_installed">not installed</string>
+    <string name="app_unavailable">The app is not installed or is disabled</string>
+    <string name="shortcut_needs_home">Shortcuts work when Launcher is the home app</string>
+    <string name="shortcut_open_failed">Couldn\'t open “%1$s”. Add it again from its app</string>
+
+    <!-- Home screen -->
+    <string name="desktop_no_room_page">No room on this page</string>
+    <string name="desktop_no_room_main">No room on the main page</string>
+    <string name="menu_wallpaper">Wallpaper</string>
+    <string name="menu_app_info">App info</string>
+    <string name="widget_add">Add widget</string>
+    <string name="widget_reconfigure">Set up again</string>
+    <string name="widget_no_room">No room for this widget on the page</string>
+    <string name="widget_app_missing">This widget\'s app is not installed</string>
+
+    <!-- Dock -->
+    <string name="dock_slot_taken">That dock slot is taken</string>
+    <string name="dock_tap">Tap: %1$s</string>
+    <string name="dock_swipe_up">Swipe ↑: %1$s</string>
+    <string name="dock_swipe_down">Swipe ↓: %1$s</string>
+    <string name="dock_pick_tap">On tap</string>
+    <string name="dock_pick_swipe_up">On swipe up</string>
+    <string name="dock_pick_swipe_down">On swipe down</string>
+
+    <!-- Drawer and search -->
+    <string name="search_apps_hint">Search apps…</string>
+    <string name="search_with">Search with</string>
+    <string name="search_calc_result">Result</string>
+    <string name="drawer_rename_tab">Rename tab</string>
+    <string name="drawer_new_tab">New tab</string>
+    <string name="drawer_show_app">Show in drawer</string>
+    <string name="drawer_hide_app">Hide from drawer</string>
+    <string name="poison_mark">Mark as poison</string>
+    <string name="poison_unmark">Remove from poisons</string>
+    <string name="picker_none">None</string>
+
+    <!-- Pause before a poison app -->
+    <string name="poison_breathe">Take a breath</string>
+    <string name="poison_open_anyway_question">Open it anyway?</string>
+    <string name="poison_opens_none">You haven\'t opened it today</string>
+    <plurals name="poison_opens_today">
+        <item quantity="one">You opened it %d time today</item>
+        <item quantity="other">You opened it %d times today</item>
+    </plurals>
+    <plurals name="poison_wait_step">
+        <item quantity="one">Each time you open it in a day, the wait grows by %d second</item>
+        <item quantity="other">Each time you open it in a day, the wait grows by %d seconds</item>
+    </plurals>
+    <string name="poison_go_back">No, go back</string>
+    <string name="poison_open_in">Open in %1$d</string>
+    <string name="poison_open_anyway">Open anyway</string>
+
+    <!-- Settings -->
+    <string name="settings_drawer">App drawer</string>
+    <string name="settings_dock">Dock</string>
+    <string name="settings_gestures">Gestures</string>
+    <string name="settings_backup">Backup</string>
+    <string name="settings_grid_summary">Grid %1$d × %2$d</string>
+    <string name="settings_gestures_summary">Double tap: %1$s</string>
+    <string name="settings_backup_summary_weekly">Weekly backup in %1$s</string>
+    <string name="settings_backup_summary">Save, restore, import from Nova</string>
+    <string name="settings_home_app">Home app</string>
+    <string name="settings_home_app_summary">The one the phone\'s home button opens</string>
+    <string name="settings_layout">Layout</string>
+    <string name="settings_pages">Pages</string>
+    <string name="settings_page">Page %1$d</string>
+    <string name="settings_page_empty">Empty</string>
+    <string name="settings_add_page">Add page</string>
+    <string name="settings_remove_page">Remove page %1$d</string>
+    <string name="settings_apps">Apps</string>
+    <string name="gesture_double_tap">Double tap</string>
+    <string name="gesture_pick_double_tap">On double tap</string>
+    <string name="stepper_fewer">Fewer</string>
+    <string name="stepper_more">More</string>
+
+    <string name="desktop_grid">Home screen grid</string>
+    <string name="desktop_page_main">Main</string>
+    <string name="desktop_make_main">Set as main</string>
+    <plurals name="desktop_remove_page_text">
+        <item quantity="one">Its item moves to the nearest free spot on another page.</item>
+        <item quantity="other">Its %d items move to the nearest free spot on another page.</item>
+    </plurals>
+    <string name="desktop_grid_note_unchanged">Everything stays in place.</string>
+    <plurals name="desktop_grid_note_moved">
+        <item quantity="one">%d item moves to the nearest free spot.</item>
+        <item quantity="other">%d items move to the nearest free spot.</item>
+    </plurals>
+    <plurals name="desktop_grid_note_pages_added">
+        <item quantity="one">A page is added.</item>
+        <item quantity="other">%d pages are added.</item>
+    </plurals>
+
+    <string name="drawer_grid">Drawer grid</string>
+    <string name="drawer_grid_note">Rows is how many fit on one screen, which sets their height.</string>
+    <string name="settings_tabs">Tabs</string>
+    <string name="drawer_tab">Tab</string>
+    <string name="drawer_tab_all_apps">All apps</string>
+    <string name="drawer_tab_hides_apps">hidden from All apps</string>
+    <string name="drawer_add_tab">Add tab</string>
+    <string name="drawer_hide_from_all_tabs">Hide its apps from All apps</string>
+    <string name="drawer_remove_tab">Remove tab</string>
+    <string name="drawer_remove_tab_title">Remove “%1$s”</string>
+    <string name="drawer_remove_tab_text">The apps stay installed; only this list is lost.</string>
+    <string name="drawer_hidden_apps">Hidden apps</string>
+    <string name="drawer_hidden_apps_none">None; search still finds them</string>
+    <string name="poison_summary_none">Apps that open after a pause</string>
+
+    <string name="dock_icons_per_page">Icons per page</string>
+    <string name="dock_icons_per_page_summary">Extra ones are kept until there is room again</string>
+    <string name="dock_infinite_scroll">Infinite scroll</string>
+    <string name="dock_infinite_scroll_summary">The last page leads to the first</string>
+    <string name="dock_remove_page_text">Removes its dock icons and what their swipes open.</string>
+
+    <!-- Backup -->
+    <string name="backup_manual">Manual</string>
+    <string name="backup_save">Save backup</string>
+    <string name="backup_save_summary">Home screen, dock, tabs, poisons and settings, in a file</string>
+    <string name="backup_restore">Restore backup</string>
+    <string name="backup_restore_summary">Replaces everything with a saved file</string>
+    <string name="backup_restore_title">Restore a backup</string>
+    <string name="backup_restore_text">Replaces the home screen, dock, tabs and settings. Missing widgets are set up again by tapping them.</string>
+    <string name="backup_automatic">Automatic</string>
+    <string name="backup_weekly">Weekly backup</string>
+    <string name="backup_weekly_in">In %1$s</string>
+    <string name="backup_weekly_off">Off</string>
+    <string name="backup_chosen_folder">the chosen folder</string>
+    <string name="backup_import_nova">Import from Nova</string>
+    <string name="backup_import_nova_summary">From a .novabackup file</string>
+    <string name="backup_import_nova_text">Replaces the home screen, dock, tabs, hidden apps and grids; poisons stay. Widgets are set up again by tapping them.</string>
+    <string name="backup_saved">Backup saved</string>
+    <string name="backup_save_failed">Couldn\'t save the backup</string>
+    <string name="backup_restored">Backup restored</string>
+    <string name="backup_read_failed">Couldn\'t read the backup</string>
+    <string name="backup_auto_failed">Couldn\'t make the automatic backup. Check the folder in Settings → Backup</string>
+    <string name="backup_nova_read_failed">Couldn\'t read the Nova backup</string>
+    <string name="backup_nova_imported">Imported. Tap each widget to add it</string>
+
+    <!-- A shortcut another app asks to pin -->
+    <string name="pin_text">“%1$s”, from %2$s</string>
+    <string name="pin_no_room">No room on the home screen</string>
+    <string name="pin_add_failed">Couldn\'t add “%1$s”</string>
+    <string name="pin_added">Added to home screen</string>
+</resources>

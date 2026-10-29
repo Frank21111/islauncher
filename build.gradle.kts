@@ -27,6 +27,11 @@ android {
     buildFeatures {
         compose = true
     }
+
+    // Per-app language picker: locales come from res/values* (the default's from res/resources.properties).
+    androidResources {
+        generateLocaleConfig = true
+    }
 }
 
 dependencies {

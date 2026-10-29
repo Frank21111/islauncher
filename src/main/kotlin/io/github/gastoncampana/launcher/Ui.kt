@@ -3,6 +3,7 @@ package io.github.gastoncampana.launcher
 import android.app.SearchManager
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -10,6 +11,7 @@ import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.SizeF
 import androidx.activity.compose.BackHandler
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -144,6 +146,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -336,7 +340,7 @@ private class Mover(private val l: Launcher) {
         val want = d.item.cell.copy(x = at.x / bounds.width * l.layout.columns, y = at.y / bounds.height * l.layout.rows)
         val before = l.layout
         l.update { it.moved(d.page, d.item, page, want) }
-        if (l.layout === before) l.toast("No hay lugar en esta página")
+        if (l.layout === before) l.toast(l.getString(R.string.desktop_no_room_page))
     }
 
     // Only an empty slot: replacing a dock icon by accident would lose its swipes' setup with no undo.
@@ -344,7 +348,7 @@ private class Mover(private val l: Launcher) {
         val page = dockPage()
         val size = l.layout.dockSize
         val slot = ((d.pointer.x - dock.left) / dock.width * size).toInt().coerceIn(0, size - 1)
-        if (l.layout.dock[page][slot].tap != null) return l.toast("Ese lugar del dock está ocupado")
+        if (l.layout.dock[page][slot].tap != null) return l.toast(l.getString(R.string.dock_slot_taken))
         l.update { layout ->
             layout.copy(
                 dock = layout.dock.replaced(page) { it.replaced(slot) { icon -> icon.copy(tap = app) } },
@@ -437,11 +441,11 @@ private fun Movable(
 private fun DesktopMenu(l: Launcher, menu: Popup.DesktopMenu) {
     Box(Modifier.offset { IntOffset(menu.at.x.roundToInt(), menu.at.y.roundToInt()) }) {
         DropdownMenu(true, { l.popup = null }) {
-            MenuItem(l, "Agregar widget") { l.popup = Popup.Widgets(menu.page) }
-            MenuItem(l, "Fondo de pantalla") {
-                l.startIntent(Intent.createChooser(Intent(Intent.ACTION_SET_WALLPAPER), null), "el selector de fondos")
+            MenuItem(l, stringResource(R.string.widget_add)) { l.popup = Popup.Widgets(menu.page) }
+            MenuItem(l, stringResource(R.string.menu_wallpaper)) {
+                l.startIntent(Intent.createChooser(Intent(Intent.ACTION_SET_WALLPAPER), null), l.getString(R.string.open_target_wallpaper_picker))
             }
-            MenuItem(l, "Ajustes") { l.settingsOpen = true }
+            MenuItem(l, stringResource(R.string.settings)) { l.settingsOpen = true }
         }
     }
 }
@@ -493,9 +497,9 @@ private fun WidgetPlaceholder(l: Launcher, item: Item.Widget, onClick: () -> Uni
 private fun ItemMenu(l: Launcher, page: Int, item: Item) {
     DropdownMenu(l.popup == Popup.ItemMenu(page, item), { l.popup = null }) {
         val app = (item as? Item.Icon)?.let { l.appOf(it.target) }
-        if (app != null) MenuItem(l, "Info de la app") { l.showInfo(app) }
-        if (item is Item.Widget && item.widgetId != 0) MenuItem(l, "Volver a configurar") { l.unbind(page, item) }
-        MenuItem(l, "Quitar") { l.remove(page, item) }
+        if (app != null) MenuItem(l, stringResource(R.string.menu_app_info)) { l.showInfo(app) }
+        if (item is Item.Widget && item.widgetId != 0) MenuItem(l, stringResource(R.string.widget_reconfigure)) { l.unbind(page, item) }
+        MenuItem(l, stringResource(R.string.remove)) { l.remove(page, item) }
     }
 }
 
@@ -575,10 +579,16 @@ private fun DockSlot(l: Launcher, virtualPage: Int, slot: Int, icon: DockIcon, i
             fun pick(title: String, set: (DockIcon, Target?) -> DockIcon) {
                 l.popup = Popup.PickApp(title) { app -> l.updateDock(page, slot) { set(it, app?.let { a -> Target.App(a.id) }) } }
             }
-            MenuItem(l, "Tocar: ${l.labelOf(icon.tap)}") { pick("Al tocar") { d, t -> d.copy(tap = t) } }
-            MenuItem(l, "Deslizar ↑: ${l.labelOf(icon.up)}") { pick("Al deslizar hacia arriba") { d, t -> d.copy(up = t) } }
-            MenuItem(l, "Deslizar ↓: ${l.labelOf(icon.down)}") { pick("Al deslizar hacia abajo") { d, t -> d.copy(down = t) } }
-            l.appOf(icon.tap)?.let { app -> MenuItem(l, "Info de la app") { l.showInfo(app) } }
+            MenuItem(l, stringResource(R.string.dock_tap, l.labelOf(icon.tap))) {
+                pick(l.getString(R.string.dock_pick_tap)) { d, t -> d.copy(tap = t) }
+            }
+            MenuItem(l, stringResource(R.string.dock_swipe_up, l.labelOf(icon.up))) {
+                pick(l.getString(R.string.dock_pick_swipe_up)) { d, t -> d.copy(up = t) }
+            }
+            MenuItem(l, stringResource(R.string.dock_swipe_down, l.labelOf(icon.down))) {
+                pick(l.getString(R.string.dock_pick_swipe_down)) { d, t -> d.copy(down = t) }
+            }
+            l.appOf(icon.tap)?.let { app -> MenuItem(l, stringResource(R.string.menu_app_info)) { l.showInfo(app) } }
         }
     }
 }
@@ -600,7 +610,7 @@ private fun SearchPill(l: Launcher) {
     ) {
         SearchGlyph(HINT, Modifier.size(20.dp))
         Spacer(Modifier.weight(1f))
-        AssistantGlyph(Modifier.clip(CircleShape).clickable { l.startIntent(Intent(Intent.ACTION_VOICE_COMMAND), "el asistente") }.padding(4.dp))
+        AssistantGlyph(Modifier.clip(CircleShape).clickable { l.startIntent(Intent(Intent.ACTION_VOICE_COMMAND), l.getString(R.string.open_target_assistant)) }.padding(4.dp))
         Spacer(Modifier.width(1.dp))
         LensGlyph(
             Modifier.clip(CircleShape).clickable {
@@ -612,7 +622,7 @@ private fun SearchPill(l: Launcher) {
             Modifier
                 .clip(CircleShape)
                 .clickable {
-                    l.startIntent(Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_CALENDAR), "el calendario")
+                    l.startIntent(Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_CALENDAR), l.getString(R.string.open_target_calendar))
                 }
                 .padding(4.dp),
             color = Color.White,
@@ -788,6 +798,7 @@ private fun iconSize(nova: Dp, width: Dp, height: Dp) = minOf(nova, width * ICON
 @Composable
 private fun CalcResult(value: Double) {
     val context = LocalContext.current
+    val clipLabel = stringResource(R.string.search_calc_result)
     val text = remember(value) {
         // Scientific notation where ten decimals would round to 0 or the digits run off the screen.
         if (value != 0.0 && abs(value) < 1e-6 || abs(value) >= 1e15) "%.6g".format(value)
@@ -799,12 +810,12 @@ private fun CalcResult(value: Double) {
             .padding(horizontal = 8.dp, vertical = 8.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(TAB_OFF)
-            .clickable { context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Resultado", text)) }
+            .clickable { context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(clipLabel, text)) }
             .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text("= $text", Modifier.weight(1f), color = Color.White, fontSize = 28.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text("Copiar", color = TAB_OFF_TEXT, fontSize = 14.sp)
+        Text(stringResource(R.string.copy), color = TAB_OFF_TEXT, fontSize = 14.sp)
     }
 }
 
@@ -831,7 +842,7 @@ private fun SearchField(query: String, onChange: (String) -> Unit, focus: FocusR
             keyboardActions = KeyboardActions(onGo = { onGo() }),
             decorationBox = { field ->
                 Box {
-                    if (query.isEmpty()) Text("Buscar aplicaciones…", color = HINT, fontSize = 18.sp)
+                    if (query.isEmpty()) Text(stringResource(R.string.search_apps_hint), color = HINT, fontSize = 18.sp)
                     field()
                 }
             },
@@ -850,18 +861,18 @@ private fun Tabs(l: Launcher, selected: Int, onSelect: (Int) -> Unit) {
             Box {
                 Bubble(tab.name, i == selected, Modifier.combinedClickable(onClick = { onSelect(i) }, onLongClick = { l.popup = Popup.TabMenu(i) }))
                 DropdownMenu(l.popup == Popup.TabMenu(i), { l.popup = null }) {
-                    MenuItem(l, "Renombrar") {
-                        l.popup = Popup.Rename("Renombrar pestaña", tab.name) { name ->
+                    MenuItem(l, stringResource(R.string.rename)) {
+                        l.popup = Popup.Rename(l.getString(R.string.drawer_rename_tab), tab.name) { name ->
                             l.update { it.copy(tabs = it.tabs.replaced(i) { t -> t.copy(name = name) }) }
                         }
                     }
-                    MenuItem(l, "Nueva pestaña") {
-                        l.popup = Popup.Rename("Nueva pestaña", "") { name ->
+                    MenuItem(l, stringResource(R.string.drawer_new_tab)) {
+                        l.popup = Popup.Rename(l.getString(R.string.drawer_new_tab), "") { name ->
                             l.update { it.copy(tabs = it.tabs + Tab(name, emptySet(), hideApps = true)) }
                         }
                     }
                     if (tab.apps != null) {
-                        MenuItem(l, "Eliminar") {
+                        MenuItem(l, stringResource(R.string.delete)) {
                             onSelect(0)
                             l.update { it.copy(tabs = it.tabs.filterIndexed { j, _ -> j != i }) }
                         }
@@ -907,7 +918,7 @@ private fun DrawerApp(l: Launcher, mover: Mover, app: App, height: Dp, icon: Dp)
             Text(app.label, Modifier.padding(top = 6.dp, start = 2.dp, end = 2.dp), style = LABEL, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         DropdownMenu(l.popup == Popup.AppMenu(app.id), { l.popup = null }) {
-            MenuItem(l, "Agregar al escritorio") { l.addToDesktop(Target.App(app.id), app.label) }
+            MenuItem(l, stringResource(R.string.add_to_home_screen)) { l.addToDesktop(Target.App(app.id), app.label) }
             // Tab toggles leave the menu open so several can be set at once.
             l.layout.tabs.forEachIndexed { i, tab ->
                 val members = tab.apps ?: return@forEachIndexed
@@ -917,14 +928,14 @@ private fun DrawerApp(l: Launcher, mover: Mover, app: App, height: Dp, icon: Dp)
                 })
             }
             val hidden = l.layout.hidden.any { l.find(it) == app }
-            MenuItem(l, if (hidden) "Mostrar en el cajón" else "Ocultar del cajón") {
+            MenuItem(l, stringResource(if (hidden) R.string.drawer_show_app else R.string.drawer_hide_app)) {
                 l.update { it.copy(hidden = it.hidden.toggled(app, app.id, l.find)) }
             }
             val poison = l.isPoison(app)
-            MenuItem(l, if (poison) "Quitar de venenos" else "Marcar como veneno") {
+            MenuItem(l, stringResource(if (poison) R.string.poison_unmark else R.string.poison_mark)) {
                 l.update { it.copy(poisons = it.poisons.toggled(app, app.id, l.find)) }
             }
-            MenuItem(l, "Info de la app") { l.showInfo(app) }
+            MenuItem(l, stringResource(R.string.menu_app_info)) { l.showInfo(app) }
         }
     }
 }
@@ -971,7 +982,7 @@ private fun FastScroller(grid: LazyGridState, columns: Int, modifier: Modifier) 
 @Composable
 private fun SearchProviders(l: Launcher, query: String) {
     Column(Modifier.padding(start = 16.dp, top = 8.dp)) {
-        Text("Buscar con", color = Color.White, fontSize = 16.sp)
+        Text(stringResource(R.string.search_with), color = Color.White, fontSize = 16.sp)
         Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             for (p in PROVIDERS) {
                 val app = l.appOf(Target.Shortcut(p.pkg, "", ""))
@@ -1028,7 +1039,7 @@ private fun PickerDialog(l: Launcher, title: String, query: String, onQuery: (St
         Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
             Column(Modifier.padding(16.dp).heightIn(max = 560.dp)) {
                 Text(title, Modifier.padding(start = 4.dp, bottom = 8.dp), style = MaterialTheme.typography.titleMedium)
-                OutlinedTextField(query, onQuery, Modifier.fillMaxWidth(), placeholder = { Text("Buscar") }, singleLine = true)
+                OutlinedTextField(query, onQuery, Modifier.fillMaxWidth(), placeholder = { Text(stringResource(R.string.search)) }, singleLine = true)
                 LazyColumn(content = rows)
             }
         }
@@ -1043,7 +1054,7 @@ private fun AppPicker(l: Launcher, p: Popup.PickApp) {
             l.popup = null
             p.onPick(app)
         }
-        item { PickerRow(null, "Nada") { choose(null) } }
+        item { PickerRow(null, stringResource(R.string.picker_none)) { choose(null) } }
         items(search(l.apps, query) { it.label }, key = { it.id }) { app -> PickerRow(app.icon, app.label) { choose(app) } }
     }
 }
@@ -1057,7 +1068,7 @@ private fun WidgetPicker(l: Launcher, page: Int) {
             .sortedBy { fold(it.second) }
     }
     var query by remember { mutableStateOf("") }
-    PickerDialog(l, "Agregar widget", query, { query = it }) {
+    PickerDialog(l, stringResource(R.string.widget_add), query, { query = it }) {
         items(search(providers, query) { it.second }) { (info, label) ->
             PickerRow(l.appOf(Target.Shortcut(info.provider.packageName, "", ""))?.icon, label) {
                 l.popup = null
@@ -1109,7 +1120,7 @@ private fun ConfirmDialog(l: Launcher, p: Popup.Confirm) = AlertDialog(
             p.onYes()
         }) { Text(p.action) }
     },
-    dismissButton = { TextButton({ l.popup = null }) { Text("Cancelar") } },
+    dismissButton = { TextButton({ l.popup = null }) { Text(stringResource(R.string.cancel)) } },
 )
 
 @Composable
@@ -1123,9 +1134,9 @@ private fun NameDialog(l: Launcher, p: Popup.Rename) {
             TextButton({
                 l.popup = null
                 p.onDone(name.trim())
-            }, enabled = name.isNotBlank()) { Text("Listo") }
+            }, enabled = name.isNotBlank()) { Text(stringResource(R.string.done)) }
         },
-        dismissButton = { TextButton({ l.popup = null }) { Text("Cancelar") } },
+        dismissButton = { TextButton({ l.popup = null }) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -1153,16 +1164,24 @@ private fun PauseScreen(l: Launcher, p: Popup.Pause) {
                 AppImage(p.app, 72.dp)
             }
             Text(p.app.label, Modifier.padding(top = 24.dp), color = Color.White, fontSize = 24.sp)
-            Text(if (left > 0) "Respirá un momento" else "¿La abrís igual?", Modifier.padding(top = 8.dp), color = TAB_OFF_TEXT, fontSize = 18.sp)
-            val today = when (opens) {
-                0 -> "Hoy no la abriste"
-                1 -> "Hoy la abriste 1 vez"
-                else -> "Hoy la abriste $opens veces"
-            }
+            Text(
+                stringResource(if (left > 0) R.string.poison_breathe else R.string.poison_open_anyway_question),
+                Modifier.padding(top = 8.dp),
+                color = TAB_OFF_TEXT,
+                fontSize = 18.sp,
+            )
+            val today = if (opens == 0) stringResource(R.string.poison_opens_none) else pluralStringResource(R.plurals.poison_opens_today, opens, opens)
             Text(today, Modifier.padding(top = 4.dp), color = HINT, fontSize = 14.sp)
-            Text("Cada vez que la abrís en el día, la espera suma $PAUSE_STEP_SECONDS segundos", color = HINT, fontSize = 14.sp, textAlign = TextAlign.Center)
+            Text(
+                pluralStringResource(R.plurals.poison_wait_step, PAUSE_STEP_SECONDS, PAUSE_STEP_SECONDS),
+                color = HINT,
+                fontSize = 14.sp,
+                textAlign = TextAlign.Center,
+            )
             Spacer(Modifier.height(48.dp))
-            Button({ l.popup = null }, colors = ButtonDefaults.buttonColors(containerColor = ACCENT, contentColor = Color.Black)) { Text("No, volver") }
+            Button({ l.popup = null }, colors = ButtonDefaults.buttonColors(containerColor = ACCENT, contentColor = Color.Black)) {
+                Text(stringResource(R.string.poison_go_back))
+            }
             TextButton(
                 {
                     l.popup = null
@@ -1171,7 +1190,7 @@ private fun PauseScreen(l: Launcher, p: Popup.Pause) {
                 },
                 Modifier.padding(top = 8.dp),
                 enabled = left == 0,
-            ) { Text(if (left > 0) "Abrir en $left" else "Abrir igual") }
+            ) { Text(if (left > 0) stringResource(R.string.poison_open_in, left) else stringResource(R.string.poison_open_anyway)) }
         }
     }
 }
@@ -1284,8 +1303,12 @@ private fun IconAction(glyph: Glyph, label: String, tint: Color = MUTED, enabled
     colors = IconButtonDefaults.iconButtonColors(contentColor = tint),
 ) { GlyphIcon(glyph, LocalContentColor.current) }
 
-private enum class Section(val title: String, val glyph: Glyph) {
-    DESKTOP("Escritorio", PHONE), DRAWER("Cajón de apps", APPS), DOCK("Dock", DOCK_BAR), GESTURES("Gestos", TAP), BACKUP("Copia de seguridad", RESTORE)
+private enum class Section(@StringRes val title: Int, val glyph: Glyph) {
+    DESKTOP(R.string.home_screen, PHONE),
+    DRAWER(R.string.settings_drawer, APPS),
+    DOCK(R.string.settings_dock, DOCK_BAR),
+    GESTURES(R.string.settings_gestures, TAP),
+    BACKUP(R.string.settings_backup, RESTORE),
 }
 
 @Composable
@@ -1298,7 +1321,7 @@ private fun SettingsScreen(l: Launcher) {
         val s = section
         // Separate branches, so the main list and each section get their own scroll position.
         if (s == null) MainList(l) { section = it } else Column {
-            Bar(s.title, back)
+            Bar(stringResource(s.title), back)
             val layout = l.layout
             when (s) {
                 Section.DESKTOP -> {
@@ -1317,9 +1340,11 @@ private fun SettingsScreen(l: Launcher) {
                     Section.DRAWER -> DrawerSettings(l, layout)
                     Section.DOCK -> DockSettings(l, layout)
                     Section.GESTURES -> {
-                        Header("Escritorio", divider = false)
-                        SettingRow("Doble toque", l.labelOf(layout.doubleTap).replaceFirstChar { it.uppercase() }, {
-                            l.popup = Popup.PickApp("Al tocar dos veces") { app -> l.update { it.copy(doubleTap = app?.let { a -> Target.App(a.id) }) } }
+                        Header(stringResource(R.string.home_screen), divider = false)
+                        SettingRow(stringResource(R.string.gesture_double_tap), l.labelOf(layout.doubleTap).replaceFirstChar { it.uppercase() }, {
+                            l.popup = Popup.PickApp(l.getString(R.string.gesture_pick_double_tap)) { app ->
+                                l.update { it.copy(doubleTap = app?.let { a -> Target.App(a.id) }) }
+                            }
                         }) { layout.doubleTap?.let { Box(Modifier.padding(end = 8.dp)) { TargetIcon(l, it, 36.dp) } } }
                     }
                     Section.BACKUP -> BackupSettings(l)
@@ -1334,19 +1359,23 @@ private fun SettingsScreen(l: Launcher) {
 private fun MainList(l: Launcher, open: (Section) -> Unit) {
     val layout = l.layout
     Column(Modifier.fillMaxSize().background(Color.Black).statusBarsPadding().verticalScroll(rememberScrollState()).navigationBarsPadding()) {
-        Text("Ajustes", Modifier.padding(start = 24.dp, top = 88.dp, bottom = 32.dp), fontSize = 32.sp, fontFamily = TITLE_FONT)
+        Text(stringResource(R.string.settings), Modifier.padding(start = 24.dp, top = 88.dp, bottom = 32.dp), fontSize = 32.sp, fontFamily = TITLE_FONT)
         for (s in Section.entries) {
             val summary = when (s) {
-                Section.DESKTOP -> "Grilla ${layout.columns} × ${layout.rows} · ${count(layout.desktop.size, "página", "páginas")}"
-                Section.DRAWER -> "Grilla ${layout.drawerColumns} × ${layout.drawerRows} · ${layout.tabs.joinToString(" · ") { it.name }}"
-                Section.DOCK -> "${count(layout.dockSize, "ícono", "íconos")} · ${count(layout.dock.size, "página", "páginas")}"
-                Section.GESTURES -> "Doble toque: ${l.labelOf(layout.doubleTap).replaceFirstChar { it.uppercase() }}"
-                Section.BACKUP -> l.backupFolder?.let { "Copia semanal en ${folderName(it)}" } ?: "Guardar, restaurar, importar de Nova"
+                Section.DESKTOP -> stringResource(R.string.settings_grid_summary, layout.columns, layout.rows) + " · " +
+                    pluralStringResource(R.plurals.count_pages, layout.desktop.size, layout.desktop.size)
+                Section.DRAWER -> stringResource(R.string.settings_grid_summary, layout.drawerColumns, layout.drawerRows) + " · " +
+                    layout.tabs.joinToString(" · ") { it.name }
+                Section.DOCK -> pluralStringResource(R.plurals.count_icons, layout.dockSize, layout.dockSize) + " · " +
+                    pluralStringResource(R.plurals.count_pages, layout.dock.size, layout.dock.size)
+                Section.GESTURES -> stringResource(R.string.settings_gestures_summary, l.labelOf(layout.doubleTap).replaceFirstChar { it.uppercase() })
+                Section.BACKUP -> l.backupFolder?.let { stringResource(R.string.settings_backup_summary_weekly, folderName(l, it)) }
+                    ?: stringResource(R.string.settings_backup_summary)
             }
-            SettingRow(s.title, summary, { open(s) }, s.glyph)
+            SettingRow(stringResource(s.title), summary, { open(s) }, s.glyph)
         }
-        SettingRow("App de inicio", "La que abre el botón de inicio del teléfono", {
-            l.startIntent(Intent(Settings.ACTION_HOME_SETTINGS), "los ajustes")
+        SettingRow(stringResource(R.string.settings_home_app), stringResource(R.string.settings_home_app_summary), {
+            l.startIntent(Intent(Settings.ACTION_HOME_SETTINGS), l.getString(R.string.open_target_settings))
         }, HOUSE)
     }
 }
@@ -1357,7 +1386,7 @@ private fun Bar(title: String, onBack: () -> Unit) = Row(
     Modifier.fillMaxWidth().background(BAR).statusBarsPadding().height(64.dp).padding(start = 10.dp),
     verticalAlignment = Alignment.CenterVertically,
 ) {
-    IconAction(BACK, "Volver", MaterialTheme.colorScheme.onSurface, onClick = onBack)
+    IconAction(BACK, stringResource(R.string.back), MaterialTheme.colorScheme.onSurface, onClick = onBack)
     Text(title, Modifier.padding(start = 11.dp), fontSize = 22.sp, fontFamily = TITLE_FONT)
 }
 
@@ -1394,73 +1423,80 @@ private fun DrawerPreview(l: Launcher, layout: Layout) = Column(Modifier.fillMax
 
 @Composable
 private fun DesktopSettings(l: Launcher, layout: Layout) {
-    Header("Diseño", divider = false)
-    GridSetting(l, "Grilla del escritorio", layout.columns, layout.rows, { c, r -> gridNote(l.layout, c, r) }) { c, r ->
+    Header(stringResource(R.string.settings_layout), divider = false)
+    GridSetting(l, stringResource(R.string.desktop_grid), layout.columns, layout.rows, { c, r -> gridNote(l, l.layout, c, r) }) { c, r ->
         l.update { it.withGrid(c, r) }
     }
-    Header("Páginas")
+    Header(stringResource(R.string.settings_pages))
     layout.desktop.forEachIndexed { i, items ->
         val main = i == layout.defaultPage
-        val summary = listOfNotNull("Principal".takeIf { main }, if (items.isEmpty()) "Vacía" else count(items.size, "elemento", "elementos"))
-        SettingRow("Página ${i + 1}", summary.joinToString(" · ")) {
+        val summary = listOfNotNull(
+            stringResource(R.string.desktop_page_main).takeIf { main },
+            if (items.isEmpty()) stringResource(R.string.settings_page_empty) else pluralStringResource(R.plurals.count_items, items.size, items.size),
+        )
+        SettingRow(stringResource(R.string.settings_page, i + 1), summary.joinToString(" · ")) {
             // Nova marks the main page with a house; another page's house makes it the main one.
             if (main) GlyphIcon(HOUSE, ACCENT, Modifier.padding(12.dp))
-            else IconAction(HOUSE, "Hacer principal") { l.update { it.copy(defaultPage = i) } }
-            if (layout.desktop.size > 1) IconAction(TRASH, "Quitar") {
+            else IconAction(HOUSE, stringResource(R.string.desktop_make_main)) { l.update { it.copy(defaultPage = i) } }
+            if (layout.desktop.size > 1) IconAction(TRASH, stringResource(R.string.remove)) {
                 val remove = { l.update { it.withoutPage(i) } }
                 if (items.isEmpty()) remove()
                 else l.popup = Popup.Confirm(
-                    "Quitar la página ${i + 1}",
-                    (if (items.size == 1) "Su elemento pasa" else "Sus ${items.size} elementos pasan") + " al lugar libre más cercano de otra página.",
-                    "Quitar",
+                    l.getString(R.string.settings_remove_page, i + 1),
+                    l.resources.getQuantityString(R.plurals.desktop_remove_page_text, items.size, items.size),
+                    l.getString(R.string.remove),
                     remove,
                 )
             }
         }
     }
-    if (layout.desktop.size < MAX_PAGES) AddRow("Agregar página") { l.update { it.copy(desktop = it.desktop + listOf(emptyList())) } }
+    if (layout.desktop.size < MAX_PAGES) AddRow(stringResource(R.string.settings_add_page)) { l.update { it.copy(desktop = it.desktop + listOf(emptyList())) } }
 }
 
 /** What Listo would do to the desktop, from [withGrid] itself. */
-private fun gridNote(layout: Layout, columns: Int, rows: Int): String {
+private fun gridNote(context: Context, layout: Layout, columns: Int, rows: Int): String {
     val next = layout.withGrid(columns, rows)
     val moved = layout.desktop.withIndex().sumOf { (i, page) -> page.count { it !in next.desktop[i] } }
     val added = next.desktop.size - layout.desktop.size
-    val note = if (moved == 0) "Todo queda en su lugar." else count(moved, "elemento pasa", "elementos pasan") + " al lugar libre más cercano."
-    return note + when (added) {
-        0 -> ""
-        1 -> " Se suma una página."
-        else -> " Se suman $added páginas."
-    }
+    val res = context.resources
+    val note = if (moved == 0) res.getString(R.string.desktop_grid_note_unchanged) else res.getQuantityString(R.plurals.desktop_grid_note_moved, moved, moved)
+    return note + if (added == 0) "" else " " + res.getQuantityString(R.plurals.desktop_grid_note_pages_added, added, added)
 }
 
 @Composable
 private fun DrawerSettings(l: Launcher, layout: Layout) {
-    Header("Diseño", divider = false)
-    GridSetting(l, "Grilla del cajón", layout.drawerColumns, layout.drawerRows, { _, _ -> "Las filas son las que entran en pantalla; marcan su alto." }) { c, r ->
+    Header(stringResource(R.string.settings_layout), divider = false)
+    val rowsNote = stringResource(R.string.drawer_grid_note)
+    GridSetting(l, stringResource(R.string.drawer_grid), layout.drawerColumns, layout.drawerRows, { _, _ -> rowsNote }) { c, r ->
         l.update { it.copy(drawerColumns = c, drawerRows = r) }
     }
-    Header("Pestañas")
+    Header(stringResource(R.string.settings_tabs))
     layout.tabs.forEachIndexed { i, tab ->
-        val summary = if (tab.apps == null) "Todas las apps" else count(tab.apps.size, "app", "apps") + if (tab.hideApps) " · fuera de las demás" else ""
+        val summary = if (tab.apps == null) stringResource(R.string.drawer_tab_all_apps)
+        else pluralStringResource(R.plurals.count_apps, tab.apps.size, tab.apps.size) +
+            if (tab.hideApps) " · " + stringResource(R.string.drawer_tab_hides_apps) else ""
         fun move(to: Int) = l.update { it.copy(tabs = it.tabs.toMutableList().apply { add(to, removeAt(i)) }) }
         SettingRow(tab.name, summary, { l.popup = Popup.EditTab(i) }) {
-            IconAction(UP, "Subir", enabled = i > 0) { move(i - 1) }
-            IconAction(DOWN, "Bajar", enabled = i < layout.tabs.lastIndex) { move(i + 1) }
+            IconAction(UP, stringResource(R.string.move_up), enabled = i > 0) { move(i - 1) }
+            IconAction(DOWN, stringResource(R.string.move_down), enabled = i < layout.tabs.lastIndex) { move(i + 1) }
         }
     }
-    AddRow("Agregar pestaña") {
-        l.popup = Popup.Rename("Nueva pestaña", "") { name -> l.update { it.copy(tabs = it.tabs + Tab(name, emptySet(), hideApps = true)) } }
+    AddRow(stringResource(R.string.drawer_add_tab)) {
+        l.popup = Popup.Rename(l.getString(R.string.drawer_new_tab), "") { name -> l.update { it.copy(tabs = it.tabs + Tab(name, emptySet(), hideApps = true)) } }
     }
-    Header("Apps")
+    Header(stringResource(R.string.settings_apps))
     val hidden = layout.hidden.mapNotNull(l.find).toSet().size
-    SettingRow("Apps ocultas", if (hidden == 0) "Ninguna; la búsqueda las encuentra igual" else count(hidden, "app", "apps"), {
-        l.popup = Popup.Checklist("Apps ocultas", { it.hidden }, { layout, ids -> layout.copy(hidden = ids) })
-    })
+    SettingRow(
+        stringResource(R.string.drawer_hidden_apps),
+        if (hidden == 0) stringResource(R.string.drawer_hidden_apps_none) else pluralStringResource(R.plurals.count_apps, hidden, hidden),
+        { l.popup = Popup.Checklist(l.getString(R.string.drawer_hidden_apps), { it.hidden }, { layout, ids -> layout.copy(hidden = ids) }) },
+    )
     val poisons = layout.poisons.mapNotNull(l.find).toSet().size
-    SettingRow("Venenos", if (poisons == 0) "Apps que abren tras una pausa" else count(poisons, "app", "apps"), {
-        l.popup = Popup.Checklist("Venenos", { it.poisons }, { layout, ids -> layout.copy(poisons = ids) })
-    })
+    SettingRow(
+        stringResource(R.string.poisons),
+        if (poisons == 0) stringResource(R.string.poison_summary_none) else pluralStringResource(R.plurals.count_apps, poisons, poisons),
+        { l.popup = Popup.Checklist(l.getString(R.string.poisons), { it.poisons }, { layout, ids -> layout.copy(poisons = ids) }) },
+    )
 }
 
 /** Renames drawer tab [i]; a tab of chosen apps can also leave the others or go. */
@@ -1471,13 +1507,13 @@ private fun TabDialog(l: Launcher, i: Int, tab: Tab) {
     var hide by remember { mutableStateOf(tab.hideApps) }
     AlertDialog(
         onDismissRequest = onClose,
-        title = { DialogTitle("Pestaña") },
+        title = { DialogTitle(stringResource(R.string.drawer_tab)) },
         text = {
             Column {
                 OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), singleLine = true)
                 if (tab.apps != null) {
                     Row(Modifier.padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Sacar sus apps de las pestañas de todas", Modifier.weight(1f).padding(end = 16.dp), fontSize = 16.sp)
+                        Text(stringResource(R.string.drawer_hide_from_all_tabs), Modifier.weight(1f).padding(end = 16.dp), fontSize = 16.sp)
                         Switch(hide, { hide = it })
                     }
                     // In the body and the accent, away from Listo: the one action here that loses something.
@@ -1490,13 +1526,18 @@ private fun TabDialog(l: Launcher, i: Int, tab: Tab) {
                                 onClose()
                                 val remove = { l.update { it.copy(tabs = it.tabs.filterIndexed { j, _ -> j != i }) } }
                                 if (tab.apps.isEmpty()) remove()
-                                else l.popup = Popup.Confirm("Quitar «${tab.name}»", "Las apps siguen instaladas; solo se pierde esta lista.", "Quitar", remove)
+                                else l.popup = Popup.Confirm(
+                                    l.getString(R.string.drawer_remove_tab_title, tab.name),
+                                    l.getString(R.string.drawer_remove_tab_text),
+                                    l.getString(R.string.remove),
+                                    remove,
+                                )
                             }
                             .padding(vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         GlyphIcon(TRASH, ACCENT, Modifier.padding(end = 12.dp))
-                        Text("Quitar pestaña", color = ACCENT, fontSize = 16.sp)
+                        Text(stringResource(R.string.drawer_remove_tab), color = ACCENT, fontSize = 16.sp)
                     }
                 }
             }
@@ -1505,68 +1546,80 @@ private fun TabDialog(l: Launcher, i: Int, tab: Tab) {
             TextButton({
                 onClose()
                 l.update { it.copy(tabs = it.tabs.replaced(i) { t -> t.copy(name = name.trim(), hideApps = hide) }) }
-            }, enabled = name.isNotBlank()) { Text("Listo") }
+            }, enabled = name.isNotBlank()) { Text(stringResource(R.string.done)) }
         },
-        dismissButton = { TextButton(onClose) { Text("Cancelar") } },
+        dismissButton = { TextButton(onClose) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
 @Composable
 private fun DockSettings(l: Launcher, layout: Layout) {
-    Header("Diseño", divider = false)
-    SettingRow("Íconos por página", "Los que sobren se guardan hasta que vuelva a haber lugar") {
+    Header(stringResource(R.string.settings_layout), divider = false)
+    SettingRow(stringResource(R.string.dock_icons_per_page), stringResource(R.string.dock_icons_per_page_summary)) {
         Stepper(layout.dockSize) { n -> l.update { it.withDockSize(n) } }
     }
-    SettingRow("Desplazamiento infinito", "De la última página se pasa a la primera", { l.update { it.copy(dockWraps = !it.dockWraps) } }) {
+    SettingRow(
+        stringResource(R.string.dock_infinite_scroll),
+        stringResource(R.string.dock_infinite_scroll_summary),
+        { l.update { it.copy(dockWraps = !it.dockWraps) } },
+    ) {
         Switch(layout.dockWraps, { wraps -> l.update { it.copy(dockWraps = wraps) } })
     }
-    Header("Páginas")
+    Header(stringResource(R.string.settings_pages))
     layout.dock.forEachIndexed { i, icons ->
         val used = icons.count { it != DockIcon() }
-        SettingRow("Página ${i + 1}", if (used == 0) "Vacía" else count(used, "ícono", "íconos")) {
-            if (layout.dock.size > 1) IconAction(TRASH, "Quitar") {
+        val summary = if (used == 0) stringResource(R.string.settings_page_empty) else pluralStringResource(R.plurals.count_icons, used, used)
+        SettingRow(stringResource(R.string.settings_page, i + 1), summary) {
+            if (layout.dock.size > 1) IconAction(TRASH, stringResource(R.string.remove)) {
                 val remove = { l.update { it.copy(dock = it.dock.filterIndexed { j, _ -> j != i }) } }
                 if (used == 0) remove()
-                else l.popup = Popup.Confirm("Quitar la página ${i + 1}", "Se quitan sus íconos del dock y lo que abren al deslizarlos.", "Quitar", remove)
+                else l.popup = Popup.Confirm(
+                    l.getString(R.string.settings_remove_page, i + 1),
+                    l.getString(R.string.dock_remove_page_text),
+                    l.getString(R.string.remove),
+                    remove,
+                )
             }
         }
     }
-    if (layout.dock.size < MAX_PAGES) AddRow("Agregar página") { l.update { it.copy(dock = it.dock + listOf(List(it.dockSize) { DockIcon() })) } }
+    if (layout.dock.size < MAX_PAGES) AddRow(stringResource(R.string.settings_add_page)) { l.update { it.copy(dock = it.dock + listOf(List(it.dockSize) { DockIcon() })) } }
 }
 
 @Composable
 private fun BackupSettings(l: Launcher) {
-    Header("Manual", divider = false)
-    SettingRow("Guardar copia", "Escritorio, dock, pestañas, venenos y ajustes, en un archivo", l::saveBackup)
-    SettingRow("Restaurar copia", "Reemplaza todo por lo de un archivo guardado", {
+    Header(stringResource(R.string.backup_manual), divider = false)
+    SettingRow(stringResource(R.string.backup_save), stringResource(R.string.backup_save_summary), l::saveBackup)
+    SettingRow(stringResource(R.string.backup_restore), stringResource(R.string.backup_restore_summary), {
         l.popup = Popup.Confirm(
-            "Restaurar una copia",
-            "Reemplaza el escritorio, el dock, las pestañas y los ajustes. Los widgets que falten se vuelven a configurar tocándolos.",
-            "Elegir archivo",
+            l.getString(R.string.backup_restore_title),
+            l.getString(R.string.backup_restore_text),
+            l.getString(R.string.choose_file),
             l::restoreBackup,
         )
     })
-    Header("Automática")
+    Header(stringResource(R.string.backup_automatic))
     val folder = l.backupFolder
     // The switch reads backupFolder, so cancelling the picker leaves it off; the row picks another folder.
-    SettingRow("Copia semanal", folder?.let { "En ${folderName(it)}" } ?: "Apagada", l::chooseBackupFolder) {
+    SettingRow(
+        stringResource(R.string.backup_weekly),
+        folder?.let { stringResource(R.string.backup_weekly_in, folderName(l, it)) } ?: stringResource(R.string.backup_weekly_off),
+        l::chooseBackupFolder,
+    ) {
         Switch(folder != null, { on -> if (on) l.chooseBackupFolder() else l.stopAutoBackup() })
     }
     Header("Nova Launcher")
-    SettingRow("Importar de Nova", "Desde un archivo .novabackup", {
+    SettingRow(stringResource(R.string.backup_import_nova), stringResource(R.string.backup_import_nova_summary), {
         l.popup = Popup.Confirm(
-            "Importar de Nova",
-            "Reemplaza el escritorio, el dock, las pestañas, las apps ocultas y las grillas; los venenos quedan. " +
-                "Los widgets se vuelven a configurar tocándolos.",
-            "Elegir archivo",
+            l.getString(R.string.backup_import_nova),
+            l.getString(R.string.backup_import_nova_text),
+            l.getString(R.string.choose_file),
             l::importNova,
         )
     })
 }
 
-private fun folderName(tree: Uri) = DocumentsContract.getTreeDocumentId(tree).substringAfter(':').ifEmpty { "la carpeta elegida" }
-
-private fun count(n: Int, one: String, many: String) = if (n == 1) "1 $one" else "$n $many"
+private fun folderName(context: Context, tree: Uri) =
+    DocumentsContract.getTreeDocumentId(tree).substringAfter(':').ifEmpty { context.getString(R.string.backup_chosen_folder) }
 
 /** A row of Ajustes: [icon] on the main list, [trailing] for its buttons, switch or picture. */
 @Composable
@@ -1604,8 +1657,8 @@ private fun Header(text: String, divider: Boolean = true) {
 /** Nova's − n + or, [vertical], + n −, within GRID_SIZES; SpaceBetween spreads it over a wider [modifier]. */
 @Composable
 private fun Stepper(value: Int, modifier: Modifier = Modifier, vertical: Boolean = false, onChange: (Int) -> Unit) {
-    val less = @Composable { IconAction(LESS, "Menos", enabled = value > GRID_SIZES.first) { onChange(value - 1) } }
-    val more = @Composable { IconAction(MORE, "Más", enabled = value < GRID_SIZES.last) { onChange(value + 1) } }
+    val less = @Composable { IconAction(LESS, stringResource(R.string.stepper_fewer), enabled = value > GRID_SIZES.first) { onChange(value - 1) } }
+    val more = @Composable { IconAction(MORE, stringResource(R.string.stepper_more), enabled = value < GRID_SIZES.last) { onChange(value + 1) } }
     // A fixed box, so the buttons stay put between 9 and 10.
     val number = @Composable {
         Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { Text("$value", color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp) }
@@ -1662,9 +1715,9 @@ private fun GridDialog(l: Launcher, p: Popup.Grid) {
             TextButton({
                 l.popup = null
                 if (c != p.columns || r != p.rows) p.onDone(c, r)
-            }) { Text("Listo") }
+            }) { Text(stringResource(R.string.done)) }
         },
-        dismissButton = { TextButton({ l.popup = null }) { Text("Cancelar") } },
+        dismissButton = { TextButton({ l.popup = null }) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -1674,10 +1727,10 @@ fun PinDialog(label: String, from: String, onCancel: () -> Unit, onAdd: () -> Un
     MaterialTheme(colorScheme = novaColors()) {
         AlertDialog(
             onDismissRequest = onCancel,
-            title = { DialogTitle("Agregar al escritorio") },
-            text = { Text("«$label», de $from") },
-            confirmButton = { TextButton(onAdd) { Text("Agregar") } },
-            dismissButton = { TextButton(onCancel) { Text("Cancelar") } },
+            title = { DialogTitle(stringResource(R.string.add_to_home_screen)) },
+            text = { Text(stringResource(R.string.pin_text, label, from)) },
+            confirmButton = { TextButton(onAdd) { Text(stringResource(R.string.add)) } },
+            dismissButton = { TextButton(onCancel) { Text(stringResource(R.string.cancel)) } },
         )
     }
 }

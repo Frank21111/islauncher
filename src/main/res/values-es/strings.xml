@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shared -->
+    <string name="cancel">Cancelar</string>
+    <string name="done">Listo</string>
+    <string name="add">Agregar</string>
+    <string name="remove">Quitar</string>
+    <string name="delete">Eliminar</string>
+    <string name="rename">Renombrar</string>
+    <string name="copy">Copiar</string>
+    <string name="search">Buscar</string>
+    <string name="back">Volver</string>
+    <string name="move_up">Subir</string>
+    <string name="move_down">Bajar</string>
+    <string name="choose_file">Elegir archivo</string>
+    <string name="settings">Ajustes</string>
+    <string name="home_screen">Escritorio</string>
+    <string name="add_to_home_screen">Agregar al escritorio</string>
+    <string name="poisons">Venenos</string>
+    <plurals name="count_pages">
+        <item quantity="one">%d página</item>
+        <item quantity="many">%d páginas</item>
+        <item quantity="other">%d páginas</item>
+    </plurals>
+    <plurals name="count_icons">
+        <item quantity="one">%d ícono</item>
+        <item quantity="many">%d íconos</item>
+        <item quantity="other">%d íconos</item>
+    </plurals>
+    <plurals name="count_items">
+        <item quantity="one">%d elemento</item>
+        <item quantity="many">%d elementos</item>
+        <item quantity="other">%d elementos</item>
+    </plurals>
+    <plurals name="count_apps">
+        <item quantity="one">%d app</item>
+        <item quantity="many">%d apps</item>
+        <item quantity="other">%d apps</item>
+    </plurals>
+
+    <!-- What could not be opened: "No se pudo abrir el calendario" -->
+    <string name="open_failed">No se pudo abrir %1$s</string>
+    <string name="open_target_wallpaper_picker">el selector de fondos</string>
+    <string name="open_target_assistant">el asistente</string>
+    <string name="open_target_calendar">el calendario</string>
+    <string name="open_target_settings">los ajustes</string>
+
+    <!-- What an icon or gesture opens, in "Tocar: nada" and "Doble toque: Nada" -->
+    <string name="target_none">nada</string>
+    <string name="target_not_installed">no instalada</string>
+    <string name="app_unavailable">La app no está instalada o está desactivada</string>
+    <string name="shortcut_needs_home">Los atajos funcionan cuando Launcher es la app de inicio</string>
+    <string name="shortcut_open_failed">No se pudo abrir «%1$s». Volvé a agregarlo desde su app</string>
+
+    <!-- Home screen -->
+    <string name="desktop_no_room_page">No hay lugar en esta página</string>
+    <string name="desktop_no_room_main">No hay lugar en la página principal</string>
+    <string name="menu_wallpaper">Fondo de pantalla</string>
+    <string name="menu_app_info">Info de la app</string>
+    <string name="widget_add">Agregar widget</string>
+    <string name="widget_reconfigure">Volver a configurar</string>
+    <string name="widget_no_room">No hay lugar para este widget en la página</string>
+    <string name="widget_app_missing">La app de este widget no está instalada</string>
+
+    <!-- Dock -->
+    <string name="dock_slot_taken">Ese lugar del dock está ocupado</string>
+    <string name="dock_tap">Tocar: %1$s</string>
+    <string name="dock_swipe_up">Deslizar ↑: %1$s</string>
+    <string name="dock_swipe_down">Deslizar ↓: %1$s</string>
+    <string name="dock_pick_tap">Al tocar</string>
+    <string name="dock_pick_swipe_up">Al deslizar hacia arriba</string>
+    <string name="dock_pick_swipe_down">Al deslizar hacia abajo</string>
+
+    <!-- Drawer and search -->
+    <string name="search_apps_hint">Buscar aplicaciones…</string>
+    <string name="search_with">Buscar con</string>
+    <string name="search_calc_result">Resultado</string>
+    <string name="drawer_rename_tab">Renombrar pestaña</string>
+    <string name="drawer_new_tab">Nueva pestaña</string>
+    <string name="drawer_show_app">Mostrar en el cajón</string>
+    <string name="drawer_hide_app">Ocultar del cajón</string>
+    <string name="poison_mark">Marcar como veneno</string>
+    <string name="poison_unmark">Quitar de venenos</string>
+    <string name="picker_none">Nada</string>
+
+    <!-- Pause before a poison app -->
+    <string name="poison_breathe">Respirá un momento</string>
+    <string name="poison_open_anyway_question">¿La abrís igual?</string>
+    <string name="poison_opens_none">Hoy no la abriste</string>
+    <plurals name="poison_opens_today">
+        <item quantity="one">Hoy la abriste %d vez</item>
+        <item quantity="many">Hoy la abriste %d veces</item>
+        <item quantity="other">Hoy la abriste %d veces</item>
+    </plurals>
+    <plurals name="poison_wait_step">
+        <item quantity="one">Cada vez que la abrís en el día, la espera suma %d segundo</item>
+        <item quantity="many">Cada vez que la abrís en el día, la espera suma %d segundos</item>
+        <item quantity="other">Cada vez que la abrís en el día, la espera suma %d segundos</item>
+    </plurals>
+    <string name="poison_go_back">No, volver</string>
+    <string name="poison_open_in">Abrir en %1$d</string>
+    <string name="poison_open_anyway">Abrir igual</string>
+
+    <!-- Settings -->
+    <string name="settings_drawer">Cajón de apps</string>
+    <string name="settings_dock">Dock</string>
+    <string name="settings_gestures">Gestos</string>
+    <string name="settings_backup">Copia de seguridad</string>
+    <string name="settings_grid_summary">Grilla %1$d × %2$d</string>
+    <string name="settings_gestures_summary">Doble toque: %1$s</string>
+    <string name="settings_backup_summary_weekly">Copia semanal en %1$s</string>
+    <string name="settings_backup_summary">Guardar, restaurar, importar de Nova</string>
+    <string name="settings_home_app">App de inicio</string>
+    <string name="settings_home_app_summary">La que abre el botón de inicio del teléfono</string>
+    <string name="settings_layout">Diseño</string>
+    <string name="settings_pages">Páginas</string>
+    <string name="settings_page">Página %1$d</string>
+    <string name="settings_page_empty">Vacía</string>
+    <string name="settings_add_page">Agregar página</string>
+    <string name="settings_remove_page">Quitar la página %1$d</string>
+    <string name="settings_apps">Apps</string>
+    <string name="gesture_double_tap">Doble toque</string>
+    <string name="gesture_pick_double_tap">Al tocar dos veces</string>
+    <string name="stepper_fewer">Menos</string>
+    <string name="stepper_more">Más</string>
+
+    <string name="desktop_grid">Grilla del escritorio</string>
+    <string name="desktop_page_main">Principal</string>
+    <string name="desktop_make_main">Hacer principal</string>
+    <plurals name="desktop_remove_page_text">
+        <item quantity="one">Su elemento pasa al lugar libre más cercano de otra página.</item>
+        <item quantity="many">Sus %d elementos pasan al lugar libre más cercano de otra página.</item>
+        <item quantity="other">Sus %d elementos pasan al lugar libre más cercano de otra página.</item>
+    </plurals>
+    <string name="desktop_grid_note_unchanged">Todo queda en su lugar.</string>
+    <plurals name="desktop_grid_note_moved">
+        <item quantity="one">%d elemento pasa al lugar libre más cercano.</item>
+        <item quantity="many">%d elementos pasan al lugar libre más cercano.</item>
+        <item quantity="other">%d elementos pasan al lugar libre más cercano.</item>
+    </plurals>
+    <plurals name="desktop_grid_note_pages_added">
+        <item quantity="one">Se suma una página.</item>
+        <item quantity="many">Se suman %d páginas.</item>
+        <item quantity="other">Se suman %d páginas.</item>
+    </plurals>
+
+    <string name="drawer_grid">Grilla del cajón</string>
+    <string name="drawer_grid_note">Las filas son las que entran en pantalla; marcan su alto.</string>
+    <string name="settings_tabs">Pestañas</string>
+    <string name="drawer_tab">Pestaña</string>
+    <string name="drawer_tab_all_apps">Todas las apps</string>
+    <string name="drawer_tab_hides_apps">fuera de las demás</string>
+    <string name="drawer_add_tab">Agregar pestaña</string>
+    <string name="drawer_hide_from_all_tabs">Sacar sus apps de las pestañas de todas</string>
+    <string name="drawer_remove_tab">Quitar pestaña</string>
+    <string name="drawer_remove_tab_title">Quitar «%1$s»</string>
+    <string name="drawer_remove_tab_text">Las apps siguen instaladas; solo se pierde esta lista.</string>
+    <string name="drawer_hidden_apps">Apps ocultas</string>
+    <string name="drawer_hidden_apps_none">Ninguna; la búsqueda las encuentra igual</string>
+    <string name="poison_summary_none">Apps que abren tras una pausa</string>
+
+    <string name="dock_icons_per_page">Íconos por página</string>
+    <string name="dock_icons_per_page_summary">Los que sobren se guardan hasta que vuelva a haber lugar</string>
+    <string name="dock_infinite_scroll">Desplazamiento infinito</string>
+    <string name="dock_infinite_scroll_summary">De la última página se pasa a la primera</string>
+    <string name="dock_remove_page_text">Se quitan sus íconos del dock y lo que abren al deslizarlos.</string>
+
+    <!-- Backup -->
+    <string name="backup_manual">Manual</string>
+    <string name="backup_save">Guardar copia</string>
+    <string name="backup_save_summary">Escritorio, dock, pestañas, venenos y ajustes, en un archivo</string>
+    <string name="backup_restore">Restaurar copia</string>
+    <string name="backup_restore_summary">Reemplaza todo por lo de un archivo guardado</string>
+    <string name="backup_restore_title">Restaurar una copia</string>
+    <string name="backup_restore_text">Reemplaza el escritorio, el dock, las pestañas y los ajustes. Los widgets que falten se vuelven a configurar tocándolos.</string>
+    <string name="backup_automatic">Automática</string>
+    <string name="backup_weekly">Copia semanal</string>
+    <string name="backup_weekly_in">En %1$s</string>
+    <string name="backup_weekly_off">Apagada</string>
+    <string name="backup_chosen_folder">la carpeta elegida</string>
+    <string name="backup_import_nova">Importar de Nova</string>
+    <string name="backup_import_nova_summary">Desde un archivo .novabackup</string>
+    <string name="backup_import_nova_text">Reemplaza el escritorio, el dock, las pestañas, las apps ocultas y las grillas; los venenos quedan. Los widgets se vuelven a configurar tocándolos.</string>
+    <string name="backup_saved">Copia guardada</string>
+    <string name="backup_save_failed">No se pudo guardar la copia</string>
+    <string name="backup_restored">Copia restaurada</string>
+    <string name="backup_read_failed">No se pudo leer la copia</string>
+    <string name="backup_auto_failed">No se pudo hacer la copia automática. Revisá la carpeta en Ajustes → Copia de seguridad</string>
+    <string name="backup_nova_read_failed">No se pudo leer el backup de Nova</string>
+    <string name="backup_nova_imported">Importado. Tocá cada widget para agregarlo</string>
+
+    <!-- A shortcut another app asks to pin -->
+    <string name="pin_text">«%1$s», de %2$s</string>
+    <string name="pin_no_room">No hay lugar en el escritorio</string>
+    <string name="pin_add_failed">No se pudo agregar «%1$s»</string>
+    <string name="pin_added">Agregado al escritorio</string>
+</resources>

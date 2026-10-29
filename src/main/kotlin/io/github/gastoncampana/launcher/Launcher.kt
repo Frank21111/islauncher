@@ -261,15 +261,15 @@ class Launcher : ComponentActivity() {
     }
 
     fun labelOf(target: Target?): String = when (target) {
-        is Target.App -> appOf(target)?.label ?: "no instalada"
+        is Target.App -> appOf(target)?.label ?: getString(R.string.target_not_installed)
         is Target.Shortcut -> target.label.ifEmpty { target.id }
-        null -> "nada"
+        null -> getString(R.string.target_none)
     }
 
     fun open(target: Target?) {
         when (target) {
             null -> Unit
-            is Target.App -> appOf(target)?.let(::start) ?: toast("La app no está instalada o está desactivada")
+            is Target.App -> appOf(target)?.let(::start) ?: toast(getString(R.string.app_unavailable))
             is Target.Shortcut -> pauseIfPoison(appOf(target)) { startShortcut(target) }
         }
     }
@@ -279,8 +279,8 @@ class Launcher : ComponentActivity() {
     } catch (e: RuntimeException) { // not the default home app, shortcut removed, or user locked
         Log.w(TAG, "Cannot start shortcut ${target.pkg}/${target.id}", e)
         toast(
-            if (!launcherApps.hasShortcutHostPermission()) "Los atajos funcionan cuando Launcher es la app de inicio"
-            else "No se pudo abrir «${labelOf(target)}». Volvé a agregarlo desde su app",
+            if (!launcherApps.hasShortcutHostPermission()) getString(R.string.shortcut_needs_home)
+            else getString(R.string.shortcut_open_failed, labelOf(target)),
         )
     }
 
@@ -327,7 +327,7 @@ class Launcher : ComponentActivity() {
             action()
         } catch (e: RuntimeException) { // disabled, uninstalled, quiet-mode profile or no app for the intent
             Log.w(TAG, "Cannot open $what", e)
-            toast("No se pudo abrir $what")
+            toast(getString(R.string.open_failed, what))
         }
     }
 
@@ -357,7 +357,7 @@ class Launcher : ComponentActivity() {
 
     fun addToDesktop(target: Target, label: String) {
         val page = layout.defaultPage
-        val cell = layout.freeCell(page, 1f, 1f) ?: return toast("No hay lugar en la página principal")
+        val cell = layout.freeCell(page, 1f, 1f) ?: return toast(getString(R.string.desktop_no_room_main))
         updatePage(page) { it + Item.Icon(target, label, cell) }
     }
 
@@ -407,7 +407,7 @@ class Launcher : ComponentActivity() {
             (if (target > 0) target.toFloat() else ceil(px / resources.displayMetrics.density / cellDp * 2) / 2).coerceIn(0.5f, max.toFloat())
         val w = cells(info.minWidth, info.targetCellWidth, cellSize.width.value, layout.columns)
         val h = cells(info.minHeight, info.targetCellHeight, cellSize.height.value, layout.rows)
-        val cell = layout.freeCell(page, w, h) ?: return toast("No hay lugar para este widget en la página")
+        val cell = layout.freeCell(page, w, h) ?: return toast(getString(R.string.widget_no_room))
         val placeholder = Item.Widget(info.provider.flattenToString(), 0, cell)
         updatePage(page) { it + placeholder }
         bindWidget(page, placeholder, isNew = true)
@@ -416,7 +416,7 @@ class Launcher : ComponentActivity() {
     /** Binds [placeholder] (a widget imported or just added), asking permission and running its setup screen. */
     fun bindWidget(page: Int, placeholder: Item.Widget, isNew: Boolean = false) {
         if (binding != null) return // a second tap while the first setup is opening
-        val info = providerOf(placeholder) ?: return toast("La app de este widget no está instalada")
+        val info = providerOf(placeholder) ?: return toast(getString(R.string.widget_app_missing))
         val id = host.allocateAppWidgetId()
         binding = Binding(page, placeholder, id, info, isNew)
         if (widgetManager.bindAppWidgetIdIfAllowed(id, info.profile, info.provider, null)) return configureWidget()
@@ -483,10 +483,10 @@ class Launcher : ComponentActivity() {
         lifecycleScope.launch {
             try {
                 writeBackup(uri, json)
-                toast("Copia guardada")
+                toast(getString(R.string.backup_saved))
             } catch (e: Exception) { // provider gone, no space, or no permission
                 Log.w(TAG, "Backup failed", e)
-                toast("No se pudo guardar la copia")
+                toast(getString(R.string.backup_save_failed))
             }
         }
     }
@@ -502,13 +502,13 @@ class Launcher : ComponentActivity() {
                 }
                 val live = host.appWidgetIds.associateWith { widgetManager.getAppWidgetInfo(it)?.provider?.flattenToString() }
                 replaceLayout(parseLayout(json).restored(live))
-                toast("Copia restaurada")
+                toast(getString(R.string.backup_restored))
             } catch (e: Exception) { // not a backup of this launcher, or unreadable
                 Log.w(TAG, "Restore failed", e)
-                toast("No se pudo leer la copia")
+                toast(getString(R.string.backup_read_failed))
             } catch (e: StackOverflowError) { // deeply nested JSON
                 Log.w(TAG, "Restore failed", e)
-                toast("No se pudo leer la copia")
+                toast(getString(R.string.backup_read_failed))
             }
         }
     }
@@ -572,7 +572,7 @@ class Launcher : ComponentActivity() {
                 backups.edit { putLong("last", today) }
             } catch (e: Exception) { // folder deleted, access revoked, or storage full
                 Log.w(TAG, "Automatic backup failed", e)
-                toast("No se pudo hacer la copia automática. Revisá la carpeta en Ajustes → Copia de seguridad")
+                toast(getString(R.string.backup_auto_failed))
             }
         }
     }
@@ -588,10 +588,10 @@ class Launcher : ComponentActivity() {
                 withContext(Dispatchers.IO) { readNovaBackup(this@Launcher, uri, userSerial) }
             } catch (e: Exception) { // not a Nova backup, or an unreadable one
                 Log.w(TAG, "Nova import failed", e)
-                return@launch toast("No se pudo leer el backup de Nova")
+                return@launch toast(getString(R.string.backup_nova_read_failed))
             }
             replaceLayout(imported.restored(emptyMap()).copy(poisons = layout.poisons))
-            toast("Importado. Tocá cada widget para agregarlo")
+            toast(getString(R.string.backup_nova_imported))
         }
     }
 
@@ -629,12 +629,12 @@ class PinActivity : ComponentActivity() {
         Layouts.init(this)
         val layout = Layouts.current
         val page = (listOf(layout.defaultPage) + layout.desktop.indices).firstOrNull { layout.freeCell(it, 1f, 1f) != null }
-            ?: return toast("No hay lugar en el escritorio")
+            ?: return toast(getString(R.string.pin_no_room))
         try {
             if (!request.accept()) return
         } catch (e: RuntimeException) { // answered elsewhere, or the sender is gone
             Log.w(TAG, "Pin request failed", e)
-            return toast("No se pudo agregar «$label»")
+            return toast(getString(R.string.pin_add_failed, label))
         }
         val target = Target.Shortcut(info.`package`, info.id, label)
         try {
@@ -643,7 +643,7 @@ class PinActivity : ComponentActivity() {
             Log.w(TAG, "Cannot save the icon of $label", e)
         }
         Layouts.update { l -> l.copy(desktop = l.desktop.replaced(page) { it + Item.Icon(target, label, l.freeCell(page, 1f, 1f)!!) }) }
-        toast("Agregado al escritorio")
+        toast(getString(R.string.pin_added))
     }
 
     private fun saveIcon(file: File, icon: Drawable) {

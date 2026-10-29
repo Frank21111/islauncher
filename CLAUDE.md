@@ -59,4 +59,5 @@ Ajustes → Copia de seguridad imports a Nova backup; imported widgets start unb
 tapped. Pinned shortcuts belong to the home app that pinned them: shortcuts Nova pinned must be re-added from their
 app. Browsers bake their own badge into the web shortcuts they pin, so those get no second one.
 
-UI strings are Spanish; code comments are English.
+UI strings live in `src/main/res`: `values/strings.xml` is English (the default), `values-es/strings.xml` Spanish
+(rioplatense, voseo); new UI text needs both. Code comments are English.
