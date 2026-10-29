@@ -13,7 +13,9 @@ picker with `EXTRA_LOCAL_ONLY`, so a cloud provider cannot be chosen: keep that 
 
 ## Commands
 
-- Build and install on the USB-connected phone: `./gradlew installRelease`
+- Build and install on the USB-connected phone: `scripts/install.sh`. Not `./gradlew installRelease`: an update that kills
+  the running home app can make Android drop the "always" home choice (the HOME role stays, the choice doesn't, so
+  Home asks which launcher to use). The script stops the app first and warns if the choice was lost anyway.
 - Unit tests: `./gradlew testDebugUnitTest`
 - Make it the default: Ajustes → Apps → Apps predeterminadas → App de inicio.
 
