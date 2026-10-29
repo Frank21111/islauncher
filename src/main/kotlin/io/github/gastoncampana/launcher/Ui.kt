@@ -27,6 +27,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -264,7 +265,7 @@ fun LauncherScreen(l: Launcher) {
                 Home(l, mover)
             }
             key(l.drawerResets) {
-                AnimatedVisibility(l.drawerOpen, enter = slideInVertically { it / 4 } + fadeIn(), exit = fadeOut()) {
+                AnimatedVisibility(l.drawerOpen, enter = slideInVertically { it / 4 } + fadeIn(), exit = slideOutVertically { it / 4 } + fadeOut()) {
                     // While one of its apps is dragged to the home screen, the drawer stays (the gesture lives in it) but unseen.
                     Box(Modifier.graphicsLayer { alpha = if (mover.drag?.page == null && mover.drag != null) 0f else 1f }) { Drawer(l, mover) }
                 }
