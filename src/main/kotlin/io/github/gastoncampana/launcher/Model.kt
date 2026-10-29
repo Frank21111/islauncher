@@ -36,7 +36,7 @@ sealed interface Item {
 
     data class Icon(val target: Target, val label: String, override val cell: Cell) : Item
 
-    /** [widgetId] is 0 until the widget is bound to this launcher, e.g. right after a Nova import. */
+    /** [widgetId] is 0 until the widget is bound to this launcher: while it is added, or after its app was reinstalled. */
     data class Widget(val provider: String, val widgetId: Int, override val cell: Cell) : Item
 }
 

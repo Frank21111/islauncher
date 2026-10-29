@@ -366,7 +366,7 @@ private fun DesktopWidget(l: Launcher, page: Int, item: Item.Widget, size: DpSiz
     }
 }
 
-/** A widget that is not bound to this launcher yet (imported from Nova, or its app was reinstalled). */
+/** A widget that is not bound to this launcher (its setup was interrupted, or its app was reinstalled). */
 @Composable
 private fun WidgetPlaceholder(l: Launcher, item: Item.Widget, onClick: () -> Unit) {
     val name = remember(item.provider) {

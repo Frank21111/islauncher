@@ -28,9 +28,7 @@ picker must see non-exported widget receivers, which a `<queries>` block misses)
   `Item`s (icons and widgets on a 5×5 grid with half cells), drawer tabs, hidden apps and the double-tap target.
   Also JSON persistence, `finder` (app lookup tolerant of launcher-alias changes), `tabApps`, `freeCell`,
   accent-insensitive search. Unit-tested in `src/test`.
-- `Nova.kt`: pure converter from Nova's `favorites`/`drawer_groups`/`appgroups` rows and prefs to a `Layout`.
-  `appgroups` group -1 is Nova's hidden apps. `NovaImport.kt` reads the `.novabackup` zip (nova.db + nova.xml).
-- `Launcher.kt`: the activity (app list, widget host and bind/configure flow, Nova import), `Layouts` (the shared
+- `Launcher.kt`: the activity (app list, widget host and bind/configure flow), `Layouts` (the shared
   layout state, also written by `PinActivity`) and `PinActivity` (pinned shortcuts; asks the owner first, since any
   foreground app can send a request).
 - `Ui.kt`: Compose UI. Desktop pager with icons and widgets (long press opens the item menu; dragging moves the
@@ -40,7 +38,7 @@ picker must see non-exported widget receivers, which a `<queries>` block misses)
 - The layout is stored as JSON in SharedPreferences `launcher`, key `layout`. An unreadable layout is kept under
   `layout.corrupt` instead of being overwritten.
 
-Imported widgets start unbound (`widgetId` 0) and bind when tapped. Pinned shortcuts belong to the home app
-that pinned them: shortcuts Nova pinned must be re-added from their app once this launcher is the default.
+The layout was first imported from a Nova backup; that importer was removed once done (see git history).
+Pinned shortcuts belong to the home app that pinned them: shortcuts Nova pinned must be re-added from their app.
 
 UI strings are Spanish; code comments are English.
