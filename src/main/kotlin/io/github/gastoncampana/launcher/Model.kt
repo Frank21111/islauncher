@@ -9,10 +9,8 @@ import kotlin.math.pow
 /** Stable id of a launchable activity: "<flattened component>#<user serial number>". */
 typealias AppId = String
 
-const val DOCK_SIZE = 5
-
-/** Columns and rows of a desktop page. Items may sit on half cells. */
-const val GRID = 5
+/** Columns and rows a grid (desktop, drawer, dock) may have. */
+val GRID_SIZES = 2..12
 
 enum class Swipe(val arrow: String) { UP("↑"), DOWN("↓"), LEFT("←"), RIGHT("→") }
 
@@ -45,7 +43,8 @@ sealed interface Item {
 data class Tab(val name: String, val apps: Set<AppId>? = null, val hideApps: Boolean = false)
 
 data class Layout(
-    val dock: List<List<DockIcon>> = listOf(List(DOCK_SIZE) { DockIcon() }),
+    /** Each page holds at least [dockSize] icons; those past it stay saved, hidden, until the dock grows again. */
+    val dock: List<List<DockIcon>> = listOf(List(5) { DockIcon() }),
     val desktop: List<List<Item>> = listOf(emptyList()),
     val defaultPage: Int = 0,
     val tabs: List<Tab> = listOf(Tab("Apps")),
@@ -54,9 +53,22 @@ data class Layout(
     val hidden: Set<AppId> = emptySet(),
     /** "Venenos": apps that open only after a pause. */
     val poisons: Set<AppId> = emptySet(),
+    /** The desktop grid. Items sit on half cells. */
+    val columns: Int = 5,
+    val rows: Int = 5,
+    val dockSize: Int = 5,
+    /** The dock scrolls around from its last page to its first. */
+    val dockWraps: Boolean = true,
+    val drawerColumns: Int = 5,
+    /** Rows on screen at once: they set the row height of the scrolling drawer. */
+    val drawerRows: Int = 6,
 )
 
 fun <T> List<T>.replaced(index: Int, f: (T) -> T): List<T> = mapIndexed { i, x -> if (i == index) f(x) else x }
+
+/** [this] without [app] (matched by [find], so under any of its ids) or, when absent, with it as [id]. */
+fun <T> Set<AppId>.toggled(app: T, id: AppId, find: (AppId) -> T?): Set<AppId> =
+    if (any { find(it) == app }) filterTo(HashSet()) { find(it) != app } else this + id
 
 /** Looks apps up by [AppId], falling back to another activity of the same package and user: some apps switch
  * launcher aliases (Mercado Pago, Naranja X), which renames the activity. */
@@ -76,14 +88,75 @@ fun <T> tabApps(tab: Tab, tabs: List<Tab>, apps: List<T>, find: (AppId) -> T?, h
     return apps.filter { it !in claimed && it !in left }
 }
 
-/** The first free w×h spot on a page, scanning rows in half-cell steps and columns in whole cells. */
-fun freeCell(items: List<Item>, w: Float, h: Float): Cell? {
-    for (y2 in 0..((GRID - h) * 2).toInt()) for (x in 0..(GRID - w).toInt()) {
+/** The first free w×h spot on desktop [page], scanning rows in half-cell steps and columns in whole cells. */
+fun Layout.freeCell(page: Int, w: Float, h: Float): Cell? {
+    for (y2 in 0..((rows - h) * 2).toInt()) for (x in 0..(columns - w).toInt()) {
         val cell = Cell(x.toFloat(), y2 / 2f, w, h)
-        if (items.none { it.cell.overlaps(cell) }) return cell
+        if (desktop[page].none { it.cell.overlaps(cell) }) return cell
     }
     return null
 }
+
+fun Layout.fits(c: Cell) = c.w > 0 && c.h > 0 && c.x >= 0 && c.y >= 0 && c.x + c.w <= columns && c.y + c.h <= rows // NaN fails too
+
+/** The free half-cell spot for a [want]-sized item nearest [want] among [items], or null when there is none. */
+private fun Layout.nearestFree(items: List<Item>, want: Cell): Cell? {
+    val (_, _, w, h) = want
+    val spots = (0..((rows - h) * 2).toInt()).flatMap { y2 -> (0..((columns - w) * 2).toInt()).map { x2 -> Cell(x2 / 2f, y2 / 2f, w, h) } }
+    return spots.filter { spot -> items.none { it.cell.overlaps(spot) } }
+        .minByOrNull { (it.x - want.x) * (it.x - want.x) + (it.y - want.y) * (it.y - want.y) }
+}
+
+private fun Item.at(cell: Cell): Item = when (this) {
+    is Item.Icon -> copy(cell = cell)
+    is Item.Widget -> copy(cell = cell)
+}
+
+/**
+ * Adds [item], shrunk to the grid if bigger, at the free spot nearest its cell: on page [home] if that has room,
+ * else on the first page that does, else on a new page.
+ */
+private fun Layout.placed(home: Int?, item: Item): Layout {
+    val want = item.cell.copy(w = minOf(item.cell.w, columns.toFloat()), h = minOf(item.cell.h, rows.toFloat()))
+    for (page in listOfNotNull(home) + desktop.indices.filter { it != home }) {
+        val cell = nearestFree(desktop[page], want) ?: continue
+        return copy(desktop = desktop.replaced(page) { it + item.at(cell) })
+    }
+    return copy(desktop = desktop + listOf(listOf(item.at(nearestFree(emptyList(), want)!!))))
+}
+
+/** This layout on a [columns]×[rows] desktop grid; items that no longer fit are [placed] again. */
+fun Layout.withGrid(columns: Int, rows: Int): Layout {
+    val grid = copy(columns = columns, rows = rows)
+    val misfits = desktop.flatMapIndexed { page, items -> items.filterNot { grid.fits(it.cell) }.map { page to it } }
+    return misfits.fold(grid.copy(desktop = desktop.map { items -> items.filter { grid.fits(it.cell) } })) { layout, (page, item) ->
+        layout.placed(page, item)
+    }
+}
+
+/** Removes desktop [page], [placed] its items on the others; the last page stays. */
+fun Layout.withoutPage(page: Int): Layout {
+    if (page !in desktop.indices || desktop.size == 1) return this
+    val main = if (defaultPage > page) defaultPage - 1 else if (defaultPage == page) 0 else defaultPage
+    val rest = copy(desktop = desktop.filterIndexed { i, _ -> i != page }, defaultPage = main)
+    return desktop[page].fold(rest) { layout, item -> layout.placed(null, item) }
+}
+
+/**
+ * Where widget [w], last seen on [page], is now: there as it was, else the first one of the same provider and id
+ * on any page (a drag, a grid change or a removed page moved it). Null once it is gone.
+ */
+fun Layout.locate(page: Int, w: Item.Widget): Pair<Int, Item.Widget>? {
+    if (w in desktop.getOrNull(page).orEmpty()) return page to w
+    desktop.forEachIndexed { i, items ->
+        items.firstOrNull { it is Item.Widget && it.provider == w.provider && it.widgetId == w.widgetId }?.let { return i to it as Item.Widget }
+    }
+    return null
+}
+
+fun Layout.withDockSize(size: Int) = copy(dockSize = size, dock = dock.map { it.padded(size) })
+
+private fun List<DockIcon>.padded(size: Int) = this + List(maxOf(0, size - this.size)) { DockIcon() }
 
 /**
  * Moves [item] from page [from] (null: a new item) to the free half-cell spot of page [to] nearest [want];
@@ -93,14 +166,7 @@ fun Layout.moved(from: Int?, item: Item, to: Int, want: Cell): Layout {
     if ((from != null && item !in desktop.getOrNull(from).orEmpty()) || to !in desktop.indices) return this
     // Only the moved item leaves page [to]: an equal one there (a twin, or the same app the drawer drops) stays.
     val others = if (from == to) desktop[to] - item else desktop[to]
-    val (w, h) = item.cell.w to item.cell.h
-    val spots = (0..((GRID - h) * 2).toInt()).flatMap { y2 -> (0..((GRID - w) * 2).toInt()).map { x2 -> Cell(x2 / 2f, y2 / 2f, w, h) } }
-    val cell = spots.filter { spot -> others.none { it.cell.overlaps(spot) } }
-        .minByOrNull { (it.x - want.x) * (it.x - want.x) + (it.y - want.y) * (it.y - want.y) } ?: return this
-    val moved = when (item) {
-        is Item.Icon -> item.copy(cell = cell)
-        is Item.Widget -> item.copy(cell = cell)
-    }
+    val moved = item.at(nearestFree(others, want.copy(w = item.cell.w, h = item.cell.h)) ?: return this)
     return copy(desktop = desktop.mapIndexed { i, page -> if (i == to) others + moved else if (i == from) page - item else page })
 }
 
@@ -111,7 +177,7 @@ fun Layout.moved(from: Int?, item: Item, to: Int, want: Cell): Layout {
 fun Layout.restored(live: Map<Int, String?>): Layout {
     // Every page stays composed, so a file with thousands would make each start run out of memory.
     val pages = desktop.take(MAX_PAGES).map { page ->
-        page.filter { it.cell.let { (x, y, w, h) -> w > 0 && h > 0 && x >= 0 && y >= 0 && x + w <= GRID && y + h <= GRID } } // NaN fails too
+        page.filter { fits(it.cell) }
             .map { if (it is Item.Widget && live[it.widgetId] != it.provider) it.copy(widgetId = 0) else it }
     }
     return copy(dock = dock.take(MAX_PAGES), desktop = pages, defaultPage = defaultPage.takeIf { it in pages.indices } ?: 0)
@@ -128,14 +194,22 @@ fun Layout.toJson(): String = JSONObject()
     .put("doubleTap", doubleTap?.toJson()) // null removes the key
     .put("hidden", JSONArray(hidden.toList()))
     .put("poisons", JSONArray(poisons.toList()))
+    .put("columns", columns)
+    .put("rows", rows)
+    .put("dockSize", dockSize)
+    .put("dockWraps", dockWraps)
+    .put("drawerColumns", drawerColumns)
+    .put("drawerRows", drawerRows)
     .toString()
 
 fun parseLayout(json: String): Layout {
     val root = JSONObject(json)
-    // Every dock page has exactly DOCK_SIZE icons, so the UI can index it safely.
+    fun size(key: String, default: Int) = root.optInt(key, default).coerceIn(GRID_SIZES)
+    val dockSize = size("dockSize", 5)
+    // Every dock page has at least dockSize icons, so the UI can index it safely.
     val dock = root.getJSONArray("dock").arrays().map { page ->
-        (page.objects().map { DockIcon(it.target("tap"), it.target("up"), it.target("down")) } + List(DOCK_SIZE) { DockIcon() }).take(DOCK_SIZE)
-    }.ifEmpty { Layout().dock }
+        page.objects().map { DockIcon(it.target("tap"), it.target("up"), it.target("down")) }.padded(dockSize)
+    }.ifEmpty { listOf(List(dockSize) { DockIcon() }) }
     val desktop = root.getJSONArray("desktop").arrays().map { page -> page.objects().map { it.item() } }.ifEmpty { Layout().desktop }
     val tabs = root.getJSONArray("tabs").objects().map {
         Tab(it.getString("name"), it.optJSONArray("apps")?.strings()?.toSet(), it.optBoolean("hide"))
@@ -143,7 +217,21 @@ fun parseLayout(json: String): Layout {
     val defaultPage = root.optInt("defaultPage").takeIf { it in desktop.indices } ?: 0
     val hidden = root.optJSONArray("hidden")?.strings()?.toSet().orEmpty()
     val poisons = root.optJSONArray("poisons")?.strings()?.toSet().orEmpty()
-    return Layout(dock, desktop, defaultPage, tabs, root.target("doubleTap"), hidden, poisons)
+    return Layout(
+        dock = dock,
+        desktop = desktop,
+        defaultPage = defaultPage,
+        tabs = tabs,
+        doubleTap = root.target("doubleTap"),
+        hidden = hidden,
+        poisons = poisons,
+        columns = size("columns", 5),
+        rows = size("rows", 5),
+        dockSize = dockSize,
+        dockWraps = root.optBoolean("dockWraps", true),
+        drawerColumns = size("drawerColumns", 5),
+        drawerRows = size("drawerRows", 6),
+    )
 }
 
 private fun Target.toJson() = when (this) {

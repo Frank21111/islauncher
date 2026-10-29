@@ -127,6 +127,7 @@ class Launcher : ComponentActivity() {
     var drawerOpen by mutableStateOf(false)
     var focusSearch by mutableStateOf(false) // drawer opened from the search bar
     var popup by mutableStateOf<Popup?>(null)
+    var settingsOpen by mutableStateOf(false) // kept when leaving, so the file pickers it opens return to it
     var homePresses by mutableIntStateOf(0) // home pressed while already on the home screen
         private set
     var drawerResets by mutableIntStateOf(0) // bumped to close the drawer without its exit animation
@@ -186,7 +187,8 @@ class Launcher : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         val alreadyHome = hasWindowFocus() && intent.flags and Intent.FLAG_ACTIVITY_BROUGHT_TO_FRONT == 0
-        if (alreadyHome && !drawerOpen) homePresses++
+        if (alreadyHome && !drawerOpen && !settingsOpen) homePresses++
+        settingsOpen = false
         closeAll()
     }
 
@@ -355,7 +357,7 @@ class Launcher : ComponentActivity() {
 
     fun addToDesktop(target: Target, label: String) {
         val page = layout.defaultPage
-        val cell = freeCell(layout.desktop[page], 1f, 1f) ?: return toast("No hay lugar en la página principal")
+        val cell = layout.freeCell(page, 1f, 1f) ?: return toast("No hay lugar en la página principal")
         updatePage(page) { it + Item.Icon(target, label, cell) }
     }
 
@@ -401,11 +403,11 @@ class Launcher : ComponentActivity() {
     }
 
     fun addWidget(page: Int, info: AppWidgetProviderInfo) {
-        fun cells(px: Int, target: Int, cellDp: Float): Float =
-            if (target > 0) target.toFloat() else (ceil(px / resources.displayMetrics.density / cellDp * 2) / 2).coerceIn(0.5f, GRID.toFloat())
-        val w = cells(info.minWidth, info.targetCellWidth, cellSize.width.value)
-        val h = cells(info.minHeight, info.targetCellHeight, cellSize.height.value)
-        val cell = freeCell(layout.desktop[page], w, h) ?: return toast("No hay lugar para este widget en la página")
+        fun cells(px: Int, target: Int, cellDp: Float, max: Int): Float =
+            (if (target > 0) target.toFloat() else ceil(px / resources.displayMetrics.density / cellDp * 2) / 2).coerceIn(0.5f, max.toFloat())
+        val w = cells(info.minWidth, info.targetCellWidth, cellSize.width.value, layout.columns)
+        val h = cells(info.minHeight, info.targetCellHeight, cellSize.height.value, layout.rows)
+        val cell = layout.freeCell(page, w, h) ?: return toast("No hay lugar para este widget en la página")
         val placeholder = Item.Widget(info.provider.flattenToString(), 0, cell)
         updatePage(page) { it + placeholder }
         bindWidget(page, placeholder, isNew = true)
@@ -446,15 +448,17 @@ class Launcher : ComponentActivity() {
         if (requestCode == REQUEST_CONFIGURE) finishBinding(resultCode == RESULT_OK)
     }
 
-    private fun finishBinding(ok: Boolean) {        val b = binding ?: return
+    private fun finishBinding(ok: Boolean) {
+        val b = binding ?: return
         binding = null
+        val (page, placeholder) = layout.locate(b.page, b.placeholder) ?: return host.deleteAppWidgetId(b.id) // removed meanwhile
         if (!ok) {
             host.deleteAppWidgetId(b.id)
-            if (b.isNew) updatePage(b.page) { it - b.placeholder }
+            if (b.isNew) updatePage(page) { it - placeholder }
             return
         }
-        if (b.placeholder.widgetId != 0) host.deleteAppWidgetId(b.placeholder.widgetId) // its app had been reinstalled
-        updatePage(b.page) { items -> items.map { if (it == b.placeholder) b.placeholder.copy(widgetId = b.id) else it } }
+        if (placeholder.widgetId != 0) host.deleteAppWidgetId(placeholder.widgetId) // its app had been reinstalled
+        updatePage(page) { items -> items.map { if (it == placeholder) placeholder.copy(widgetId = b.id) else it } }
     }
 
     // --- Backup: the layout as a JSON file the owner keeps, e.g. before reinstalling ---
@@ -496,15 +500,8 @@ class Launcher : ComponentActivity() {
                     if (bytes.size > MAX_BACKUP_BYTES) throw IOException("Too big for a backup: $uri")
                     bytes.decodeToString()
                 }
-                val old = layout.desktop.flatten().filterIsInstance<Item.Widget>().map { it.widgetId }
                 val live = host.appWidgetIds.associateWith { widgetManager.getAppWidgetInfo(it)?.provider?.flattenToString() }
-                update { parseLayout(json).restored(live) }
-                // Widgets the restored layout no longer holds would stay allocated forever.
-                val kept = layout.desktop.flatten().filterIsInstance<Item.Widget>().map { it.widgetId }.toSet()
-                old.filter { it != 0 && it !in kept }.forEach {
-                    host.deleteAppWidgetId(it)
-                    widgetViews.remove(it)
-                }
+                replaceLayout(parseLayout(json).restored(live))
                 toast("Copia restaurada")
             } catch (e: Exception) { // not a backup of this launcher, or unreadable
                 Log.w(TAG, "Restore failed", e)
@@ -517,6 +514,17 @@ class Launcher : ComponentActivity() {
     }
 
     fun saveBackup() = saveBackup.launch("launcher-${LocalDate.now()}.json")
+
+    /** Swaps in a restored or imported layout, then frees the widgets it no longer holds: they would stay allocated forever. */
+    private fun replaceLayout(next: Layout) {
+        val old = layout.desktop.flatten().filterIsInstance<Item.Widget>().map { it.widgetId }
+        update { next } // first: if saving fails, the old widgets are still there
+        val kept = next.desktop.flatten().filterIsInstance<Item.Widget>().map { it.widgetId }.toSet()
+        old.filter { it != 0 && it !in kept }.forEach {
+            host.deleteAppWidgetId(it)
+            widgetViews.remove(it)
+        }
+    }
 
     private val pickFolder = registerForActivityResult(object : ActivityResultContracts.OpenDocumentTree() {
         override fun createIntent(context: Context, input: Uri?) = super.createIntent(context, input).putExtra(Intent.EXTRA_LOCAL_ONLY, true)
@@ -564,12 +572,30 @@ class Launcher : ComponentActivity() {
                 backups.edit { putLong("last", today) }
             } catch (e: Exception) { // folder deleted, access revoked, or storage full
                 Log.w(TAG, "Automatic backup failed", e)
-                toast("No se pudo hacer la copia automática. Revisá la carpeta en Copia del escritorio")
+                toast("No se pudo hacer la copia automática. Revisá la carpeta en Ajustes → Copia de seguridad")
             }
         }
     }
 
     fun restoreBackup() = openBackup.launch(arrayOf("application/json", "application/octet-stream", "text/plain"))
+
+    // --- Nova import: a .novabackup replaces the layout; the venenos, which Nova lacks, stay ---
+
+    private val pickNova = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        lifecycleScope.launch {
+            val imported = try {
+                withContext(Dispatchers.IO) { readNovaBackup(this@Launcher, uri, userSerial) }
+            } catch (e: Exception) { // not a Nova backup, or an unreadable one
+                Log.w(TAG, "Nova import failed", e)
+                return@launch toast("No se pudo leer el backup de Nova")
+            }
+            replaceLayout(imported.restored(emptyMap()).copy(poisons = layout.poisons))
+            toast("Importado. Tocá cada widget para agregarlo")
+        }
+    }
+
+    fun importNova() = pickNova.launch(arrayOf("*/*"))
 }
 
 /**
@@ -602,7 +628,7 @@ class PinActivity : ComponentActivity() {
     private fun add(request: LauncherApps.PinItemRequest, info: ShortcutInfo, label: String) {
         Layouts.init(this)
         val layout = Layouts.current
-        val page = (listOf(layout.defaultPage) + layout.desktop.indices).firstOrNull { freeCell(layout.desktop[it], 1f, 1f) != null }
+        val page = (listOf(layout.defaultPage) + layout.desktop.indices).firstOrNull { layout.freeCell(it, 1f, 1f) != null }
             ?: return toast("No hay lugar en el escritorio")
         try {
             if (!request.accept()) return
@@ -616,7 +642,7 @@ class PinActivity : ComponentActivity() {
         } catch (e: Exception) { // the app's icon stands in
             Log.w(TAG, "Cannot save the icon of $label", e)
         }
-        Layouts.update { l -> l.copy(desktop = l.desktop.replaced(page) { it + Item.Icon(target, label, freeCell(it, 1f, 1f)!!) }) }
+        Layouts.update { l -> l.copy(desktop = l.desktop.replaced(page) { it + Item.Icon(target, label, l.freeCell(page, 1f, 1f)!!) }) }
         toast("Agregado al escritorio")
     }
 

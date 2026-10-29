@@ -4,10 +4,12 @@ import android.app.SearchManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.SizeF
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -15,6 +17,20 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -59,6 +75,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -67,12 +85,14 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -168,8 +188,12 @@ private val GREEN = Color(0xFF34A853)
 private val CONDENSED = FontFamily(Typeface(android.graphics.Typeface.create("sans-serif-condensed", android.graphics.Typeface.NORMAL)))
 private val LABEL = TextStyle(color = Color.White, fontSize = 13.sp, fontFamily = CONDENSED, shadow = Shadow(Color.Black.copy(alpha = 0.6f), Offset(0f, 1f), 4f))
 private val GREY = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })
+private val TAB_HEIGHT = 40.dp
+private val TAB_GAP = 11.dp // above the tabs
+private val GRID_PADDING = PaddingValues(start = 8.dp, end = 8.dp, top = 25.dp, bottom = 16.dp)
+private val LABEL_SPACE = 28.dp // a label under an icon, with its gap
+private const val ICON_SHARE = 0.62f // of a cell's width, at most: Nova's icon on a 5-column grid
 private const val DOCK_LOOPS = 1000 // virtual dock pages, so it scrolls around in both directions
-private const val DRAWER_COLUMNS = 5
 private const val EDGE_HOLD_MS = 600L // holding a dragged item at a side this long flips the page
 private const val PAUSE_SECONDS = 10 // before a poison app opens
 private const val PAUSE_STEP_SECONDS = 5 // added for each time it was opened today
@@ -185,27 +209,39 @@ sealed interface Popup {
     class Rename(val title: String, val initial: String, val onDone: (String) -> Unit) : Popup
     data class Widgets(val page: Int) : Popup
     class Pause(val app: App, val open: () -> Unit) : Popup
-    data object Backup : Popup
+    class Confirm(val title: String, val text: String, val action: String, val onYes: () -> Unit) : Popup
+    class Grid(val title: String, val columns: Int, val rows: Int, val note: (Int, Int) -> String, val onDone: (Int, Int) -> Unit) : Popup
+    data class EditTab(val index: Int) : Popup
+
+    /** Apps to tick, like the hidden ones: [ids] reads the set from a layout, [put] writes it back. */
+    class Checklist(val title: String, val ids: (Layout) -> Set<AppId>, val put: (Layout, Set<AppId>) -> Layout) : Popup
 }
 
 @Composable
 fun LauncherScreen(l: Launcher) {
     val mover = remember { Mover(l) }
-    MaterialTheme(colorScheme = dynamicDarkColorScheme(LocalContext.current)) {
+    MaterialTheme(colorScheme = novaColors()) {
         Box(Modifier.fillMaxSize()) {
-            Home(l, mover)
+            // Hidden, not removed, under Ajustes: its clear preview strips show the wallpaper, and pages and widgets keep their state.
+            Box(Modifier.graphicsLayer { alpha = if (l.settingsOpen) 0f else 1f }.then(if (l.settingsOpen) Modifier.clearAndSetSemantics {} else Modifier)) {
+                Home(l, mover)
+            }
             key(l.drawerResets) {
                 AnimatedVisibility(l.drawerOpen, enter = slideInVertically { it / 4 } + fadeIn(), exit = fadeOut()) {
                     // While one of its apps is dragged to the home screen, the drawer stays (the gesture lives in it) but unseen.
                     Box(Modifier.graphicsLayer { alpha = if (mover.drag?.page == null && mover.drag != null) 0f else 1f }) { Drawer(l, mover) }
                 }
             }
+            if (l.settingsOpen) SettingsScreen(l)
             when (val p = l.popup) {
                 is Popup.PickApp -> AppPicker(l, p)
                 is Popup.Rename -> NameDialog(l, p)
                 is Popup.Widgets -> WidgetPicker(l, p.page)
                 is Popup.Pause -> PauseScreen(l, p)
-                Popup.Backup -> BackupDialog(l)
+                is Popup.Confirm -> ConfirmDialog(l, p)
+                is Popup.Checklist -> AppChecklist(l, p)
+                is Popup.Grid -> GridDialog(l, p)
+                is Popup.EditTab -> l.layout.tabs.getOrNull(p.index)?.let { TabDialog(l, p.index, it) }
                 else -> Unit // menus render next to what they belong to
             }
         }
@@ -297,7 +333,7 @@ private class Mover(private val l: Launcher) {
         if (d.pointer !in bounds) return // released over the search bar or page line: cancelled
         val page = pager?.currentPage ?: return
         val at = d.pointer - d.grab - bounds.topLeft
-        val want = d.item.cell.copy(x = at.x / bounds.width * GRID, y = at.y / bounds.height * GRID)
+        val want = d.item.cell.copy(x = at.x / bounds.width * l.layout.columns, y = at.y / bounds.height * l.layout.rows)
         val before = l.layout
         l.update { it.moved(d.page, d.item, page, want) }
         if (l.layout === before) l.toast("No hay lugar en esta página")
@@ -306,7 +342,8 @@ private class Mover(private val l: Launcher) {
     // Only an empty slot: replacing a dock icon by accident would lose its swipes' setup with no undo.
     private fun dropOnDock(d: Drag, app: Target.App) {
         val page = dockPage()
-        val slot = ((d.pointer.x - dock.left) / dock.width * DOCK_SIZE).toInt().coerceIn(0, DOCK_SIZE - 1)
+        val size = l.layout.dockSize
+        val slot = ((d.pointer.x - dock.left) / dock.width * size).toInt().coerceIn(0, size - 1)
         if (l.layout.dock[page][slot].tap != null) return l.toast("Ese lugar del dock está ocupado")
         l.update { layout ->
             layout.copy(
@@ -327,20 +364,21 @@ private fun DesktopPage(l: Launcher, mover: Mover, page: Int) {
                     onDoubleTap = { l.open(l.layout.doubleTap) },
                     onLongPress = { at ->
                         // A widget that ignores touches lets the press through; the widget opens its own menu.
-                        val point = Cell(at.x / size.width * GRID, at.y / size.height * GRID, 0f, 0f)
+                        val point = Cell(at.x / size.width * l.layout.columns, at.y / size.height * l.layout.rows, 0f, 0f)
                         if (l.layout.desktop.getOrNull(page).orEmpty().none { it.cell.overlaps(point) }) l.popup = Popup.DesktopMenu(page, at)
                     },
                 )
             },
     ) {
-        val cell = DpSize(maxWidth / GRID, maxHeight / GRID)
+        val cell = DpSize(maxWidth / l.layout.columns, maxHeight / l.layout.rows)
         SideEffect { l.cellSize = cell }
+        val icon = iconSize(ICON, cell.width, cell.height - LABEL_SPACE)
         for (item in l.layout.desktop.getOrNull(page).orEmpty()) key(item) {
             val size = DpSize(cell.width * item.cell.w, cell.height * item.cell.h)
             val at = Modifier.offset(cell.width * item.cell.x, cell.height * item.cell.y).size(size)
             Movable(l, mover, page, item, { l.popup = Popup.ItemMenu(page, item) }, at) {
                 when (item) {
-                    is Item.Icon -> DesktopIcon(l, item)
+                    is Item.Icon -> DesktopIcon(l, item, icon)
                     is Item.Widget -> DesktopWidget(l, page, item, size)
                 }
                 ItemMenu(l, page, item)
@@ -403,20 +441,19 @@ private fun DesktopMenu(l: Launcher, menu: Popup.DesktopMenu) {
             MenuItem(l, "Fondo de pantalla") {
                 l.startIntent(Intent.createChooser(Intent(Intent.ACTION_SET_WALLPAPER), null), "el selector de fondos")
             }
-            MenuItem(l, "App de inicio") { l.startIntent(Intent(Settings.ACTION_HOME_SETTINGS), "los ajustes") }
-            MenuItem(l, "Copia del escritorio") { l.popup = Popup.Backup }
+            MenuItem(l, "Ajustes") { l.settingsOpen = true }
         }
     }
 }
 
 @Composable
-private fun DesktopIcon(l: Launcher, item: Item.Icon) {
+private fun DesktopIcon(l: Launcher, item: Item.Icon, icon: Dp) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
             Modifier.clickable(interactionSource = null, indication = null) { l.open(item.target) },
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            TargetIcon(l, item.target)
+            TargetIcon(l, item.target, icon)
             Text(item.label, Modifier.padding(top = 6.dp, start = 4.dp, end = 4.dp), style = LABEL, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
@@ -486,21 +523,24 @@ private fun PageLine(pager: PagerState) {
 @Composable
 private fun Dock(l: Launcher, mover: Mover) {
     val pages = l.layout.dock.size
-    val pager = key(pages) { rememberPagerState(initialPage = pages * DOCK_LOOPS / 2) { pages * DOCK_LOOPS } }
+    val loops = if (l.layout.dockWraps) DOCK_LOOPS else 1
+    val pager = key(pages, loops) { rememberPagerState(initialPage = if (loops == 1) 0 else pages * loops / 2) { pages * loops } }
     SideEffect { mover.dockPage = { pager.currentPage % pages } }
-    HorizontalPager(
-        pager,
-        Modifier.fillMaxWidth().height(DOCK_HEIGHT).onGloballyPositioned { mover.dock = it.boundsInRoot() },
-        beyondViewportPageCount = 1,
-    ) { virtualPage ->
-        Row(Modifier.fillMaxSize()) {
-            l.layout.dock[virtualPage % pages].forEachIndexed { slot, icon -> DockSlot(l, virtualPage, slot, icon, Modifier.weight(1f)) }
+    BoxWithConstraints(Modifier.fillMaxWidth().height(DOCK_HEIGHT).onGloballyPositioned { mover.dock = it.boundsInRoot() }) {
+        val size = l.layout.dockSize
+        val iconSize = iconSize(ICON, maxWidth / size, maxHeight)
+        HorizontalPager(pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1) { virtualPage ->
+            Row(Modifier.fillMaxSize()) {
+                l.layout.dock[virtualPage % pages].take(size).forEachIndexed { slot, icon ->
+                    DockSlot(l, virtualPage, slot, icon, iconSize, Modifier.weight(1f))
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun DockSlot(l: Launcher, virtualPage: Int, slot: Int, icon: DockIcon, modifier: Modifier) {
+private fun DockSlot(l: Launcher, virtualPage: Int, slot: Int, icon: DockIcon, iconSize: Dp, modifier: Modifier) {
     val page = virtualPage % l.layout.dock.size
     Box(
         modifier
@@ -530,7 +570,7 @@ private fun DockSlot(l: Launcher, virtualPage: Int, slot: Int, icon: DockIcon, m
             ),
         contentAlignment = Alignment.Center,
     ) {
-        icon.tap?.let { TargetIcon(l, it) }
+        icon.tap?.let { TargetIcon(l, it, iconSize) }
         DropdownMenu(l.popup == Popup.DockMenu(virtualPage, slot), { l.popup = null }) {
             fun pick(title: String, set: (DockIcon, Target?) -> DockIcon) {
                 l.popup = Popup.PickApp(title) { app -> l.updateDock(page, slot) { set(it, app?.let { a -> Target.App(a.id) }) } }
@@ -613,7 +653,7 @@ private fun LensGlyph(modifier: Modifier) = Canvas(modifier.size(24.dp)) {
     drawCircle(GREEN, 2.6f * u, Offset(19.8f * u, 19.8f * u))
 }
 
-// --- Drawer: search, bubble tabs, 5-column grid ---
+// --- Drawer: search, bubble tabs, app grid ---
 
 /** Nova's "Buscar con" row. The query goes to the chosen app; this launcher sends nothing itself. */
 private class Provider(val name: String, val pkg: String, val intent: (String) -> Intent)
@@ -670,33 +710,40 @@ private fun Drawer(l: Launcher, mover: Mover) {
             .fillMaxSize()
             .background(Color.Black)
             .onVerticalSwipe(down = { l.drawerOpen = false })
-            .systemBarsPadding()
-            .imePadding(),
+            .systemBarsPadding(),
     ) {
         SearchField(query, { query = it }, focus) { results.firstOrNull()?.let(l::start) }
-        if (searching) {
-            val grid = rememberLazyGridState()
-            Box(Modifier.weight(1f)) {
-                val sum = calc(query)
-                AppGrid(
-                    l,
-                    mover,
-                    results,
-                    grid,
-                    pullToClose,
-                    header = { sum?.let { item(span = { GridItemSpan(maxLineSpan) }) { CalcResult(it) } } },
-                ) {
-                    item(span = { GridItemSpan(maxLineSpan) }) { SearchProviders(l, query) }
+        BoxWithConstraints(Modifier.weight(1f)) {
+            // Rows split the height under the tabs without the keyboard, so they keep their size while searching.
+            val padding = GRID_PADDING.calculateTopPadding() + GRID_PADDING.calculateBottomPadding()
+            val cell = DpSize((maxWidth - 16.dp) / l.layout.drawerColumns, (maxHeight - TAB_GAP - TAB_HEIGHT - padding) / l.layout.drawerRows)
+            Column(Modifier.fillMaxSize().imePadding()) {
+                if (searching) {
+                    val grid = rememberLazyGridState()
+                    Box(Modifier.weight(1f)) {
+                        val sum = calc(query)
+                        AppGrid(
+                            l,
+                            mover,
+                            results,
+                            grid,
+                            cell,
+                            pullToClose,
+                            header = { sum?.let { item(span = { GridItemSpan(maxLineSpan) }) { CalcResult(it) } } },
+                        ) {
+                            item(span = { GridItemSpan(maxLineSpan) }) { SearchProviders(l, query) }
+                        }
+                        FastScroller(grid, l.layout.drawerColumns, Modifier.align(Alignment.CenterEnd))
+                    }
+                } else {
+                    Tabs(l, pager.currentPage) { scope.launch { pager.animateScrollToPage(it) } }
+                    val grids = remember(tabs.size) { List(tabs.size) { LazyGridState() } }
+                    Box(Modifier.weight(1f)) {
+                        HorizontalPager(pager, Modifier.fillMaxSize()) { page -> AppGrid(l, mover, appsOf(page), grids[page], cell, pullToClose) }
+                        // One scroller over the pages, so it stays put while swiping between tabs.
+                        grids.getOrNull(pager.currentPage)?.let { FastScroller(it, l.layout.drawerColumns, Modifier.align(Alignment.CenterEnd)) }
+                    }
                 }
-                FastScroller(grid, Modifier.align(Alignment.CenterEnd))
-            }
-        } else {
-            Tabs(l, pager.currentPage) { scope.launch { pager.animateScrollToPage(it) } }
-            val grids = remember(tabs.size) { List(tabs.size) { LazyGridState() } }
-            Box(Modifier.weight(1f)) {
-                HorizontalPager(pager, Modifier.fillMaxSize()) { page -> AppGrid(l, mover, appsOf(page), grids[page], pullToClose) }
-                // One scroller over the pages, so it stays put while swiping between tabs.
-                grids.getOrNull(pager.currentPage)?.let { FastScroller(it, Modifier.align(Alignment.CenterEnd)) }
             }
         }
     }
@@ -715,20 +762,27 @@ private fun AppGrid(
     mover: Mover,
     apps: List<App>,
     grid: LazyGridState,
+    cell: DpSize,
     pullToClose: NestedScrollConnection,
     header: LazyGridScope.() -> Unit = {},
     footer: LazyGridScope.() -> Unit = {},
-) =
+) {
+    val height = cell.height.coerceAtLeast(48.dp)
+    val icon = iconSize(DRAWER_ICON, cell.width, height - LABEL_SPACE)
     LazyVerticalGrid(
-        GridCells.Fixed(DRAWER_COLUMNS),
+        GridCells.Fixed(l.layout.drawerColumns),
         Modifier.fillMaxSize().nestedScroll(pullToClose),
         grid,
-        contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 25.dp, bottom = 16.dp),
+        contentPadding = GRID_PADDING,
     ) {
         header()
-        items(apps, key = { it.id }) { app -> DrawerApp(l, mover, app) }
+        items(apps, key = { it.id }) { app -> DrawerApp(l, mover, app, height, icon) }
         footer()
     }
+}
+
+/** Nova's icon size, shrunk to fit a smaller cell ([width] wide, [height] for the icon itself). */
+private fun iconSize(nova: Dp, width: Dp, height: Dp) = minOf(nova, width * ICON_SHARE, height).coerceAtLeast(16.dp)
 
 /** The result of a search that is a sum; a tap copies it. */
 @Composable
@@ -788,7 +842,7 @@ private fun SearchField(query: String, onChange: (String) -> Unit, focus: FocusR
 @Composable
 private fun Tabs(l: Launcher, selected: Int, onSelect: (Int) -> Unit) {
     LazyRow(
-        Modifier.padding(top = 11.dp),
+        Modifier.padding(top = TAB_GAP),
         contentPadding = PaddingValues(horizontal = 24.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -824,7 +878,7 @@ private fun Bubble(text: String, selected: Boolean, modifier: Modifier) {
     Box(
         Modifier
             .widthIn(min = 88.dp)
-            .height(40.dp)
+            .height(TAB_HEIGHT)
             .clip(RoundedCornerShape(12.dp))
             .background(if (selected) ACCENT else TAB_OFF)
             .then(modifier)
@@ -836,7 +890,7 @@ private fun Bubble(text: String, selected: Boolean, modifier: Modifier) {
 }
 
 @Composable
-private fun DrawerApp(l: Launcher, mover: Mover, app: App) {
+private fun DrawerApp(l: Launcher, mover: Mover, app: App, height: Dp, icon: Dp) {
     // Taking the app out of the tab shown removes it from under its menu; the menu must not reopen when it shows up again.
     DisposableEffect(app.id) { onDispose { if (l.popup == Popup.AppMenu(app.id)) l.popup = null } }
     val item = remember(app.id, app.label) { Item.Icon(Target.App(app.id), app.label, Cell(0f, 0f)) } // what a drag drops
@@ -844,12 +898,12 @@ private fun DrawerApp(l: Launcher, mover: Mover, app: App) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .height(129.dp)
+                .height(height)
                 .clickable(interactionSource = null, indication = null) { l.start(app) },
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            AppImage(app, DRAWER_ICON)
+            AppImage(app, icon)
             Text(app.label, Modifier.padding(top = 6.dp, start = 2.dp, end = 2.dp), style = LABEL, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         DropdownMenu(l.popup == Popup.AppMenu(app.id), { l.popup = null }) {
@@ -859,18 +913,16 @@ private fun DrawerApp(l: Launcher, mover: Mover, app: App) {
                 val members = tab.apps ?: return@forEachIndexed
                 val inTab = members.any { l.find(it) == app }
                 DropdownMenuItem({ Text("${if (inTab) "✓" else "○"} ${tab.name}") }, onClick = {
-                    l.update {
-                        it.copy(tabs = it.tabs.replaced(i) { t -> t.copy(apps = if (inTab) members.filterTo(HashSet()) { id -> l.find(id) != app } else members + app.id) })
-                    }
+                    l.update { it.copy(tabs = it.tabs.replaced(i) { t -> t.copy(apps = members.toggled(app, app.id, l.find)) }) }
                 })
             }
             val hidden = l.layout.hidden.any { l.find(it) == app }
             MenuItem(l, if (hidden) "Mostrar en el cajón" else "Ocultar del cajón") {
-                l.update { it.copy(hidden = if (hidden) it.hidden.filterTo(HashSet()) { id -> l.find(id) != app } else it.hidden + app.id) }
+                l.update { it.copy(hidden = it.hidden.toggled(app, app.id, l.find)) }
             }
             val poison = l.isPoison(app)
             MenuItem(l, if (poison) "Quitar de venenos" else "Marcar como veneno") {
-                l.update { it.copy(poisons = if (poison) it.poisons.filterTo(HashSet()) { id -> l.find(id) != app } else it.poisons + app.id) }
+                l.update { it.copy(poisons = it.poisons.toggled(app, app.id, l.find)) }
             }
             MenuItem(l, "Info de la app") { l.showInfo(app) }
         }
@@ -878,11 +930,11 @@ private fun DrawerApp(l: Launcher, mover: Mover, app: App) {
 }
 
 @Composable
-private fun FastScroller(grid: LazyGridState, modifier: Modifier) {
+private fun FastScroller(grid: LazyGridState, columns: Int, modifier: Modifier) {
     // In pixels: counting visible items made the thumb jump, as that count changes a whole row at a time.
     val info = grid.layoutInfo
     val row = info.visibleItemsInfo.firstOrNull()?.size?.height ?: return
-    val rows = (info.totalItemsCount + DRAWER_COLUMNS - 1) / DRAWER_COLUMNS
+    val rows = (info.totalItemsCount + columns - 1) / columns
     val range = rows * row + info.beforeContentPadding + info.afterContentPadding - info.viewportSize.height
     if (range <= 0) return
     val scope = rememberCoroutineScope()
@@ -897,11 +949,11 @@ private fun FastScroller(grid: LazyGridState, modifier: Modifier) {
                 detectVerticalDragGestures { change, _ ->
                     // The thumb's center follows the finger.
                     val target = ((change.position.y - thumbPx / 2) / (size.height - thumbPx) * range).toInt().coerceIn(0, range)
-                    scope.launch { grid.scrollToItem(target / row * DRAWER_COLUMNS, target % row) }
+                    scope.launch { grid.scrollToItem(target / row * columns, target % row) }
                 }
             },
     ) {
-        val scrolled = grid.firstVisibleItemIndex / DRAWER_COLUMNS * row + grid.firstVisibleItemScrollOffset
+        val scrolled = grid.firstVisibleItemIndex / columns * row + grid.firstVisibleItemScrollOffset
         val progress = (scrolled.toFloat() / range).coerceIn(0f, 1f)
         Box(Modifier.align(Alignment.TopEnd).padding(end = 6.dp).width(4.dp).fillMaxHeight().background(TRACK, CircleShape))
         Box(
@@ -939,16 +991,16 @@ private fun SearchProviders(l: Launcher, query: String) {
 // --- Shared pieces ---
 
 @Composable
-private fun TargetIcon(l: Launcher, target: Target) {
+private fun TargetIcon(l: Launcher, target: Target, size: Dp) {
     val app = l.appOf(target)
     when (target) {
-        is Target.App -> AppImage(app)
-        is Target.Shortcut -> Box(Modifier.size(ICON)) {
+        is Target.App -> AppImage(app, size)
+        is Target.Shortcut -> Box(Modifier.size(size)) {
             val icon = remember(target) { l.shortcutIcon(target) }
-            if (icon != null) Image(icon, target.label, Modifier.fillMaxSize()) else AppImage(app)
+            if (icon != null) Image(icon, target.label, Modifier.fillMaxSize()) else AppImage(app, size)
             // The publishing app's badge, as Nova draws it, unless the icon has one already.
             val badged = remember(target, app) { l.isBrowser(target.pkg) } // app: a new one after each package change
-            if (app != null && !badged) Image(app.icon, null, Modifier.size(ICON * 0.4f).align(Alignment.BottomEnd).offset(4.dp, 2.dp))
+            if (app != null && !badged) Image(app.icon, null, Modifier.size(size * 0.4f).align(Alignment.BottomEnd).offset(4.dp, 2.dp))
         }
     }
 }
@@ -1016,7 +1068,7 @@ private fun WidgetPicker(l: Launcher, page: Int) {
 }
 
 @Composable
-private fun PickerRow(icon: ImageBitmap?, label: String, onClick: () -> Unit) {
+private fun PickerRow(icon: ImageBitmap?, label: String, checked: Boolean? = null, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -1026,17 +1078,47 @@ private fun PickerRow(icon: ImageBitmap?, label: String, onClick: () -> Unit) {
     ) {
         Box(Modifier.size(40.dp)) { icon?.let { Image(it, null, Modifier.fillMaxSize()) } }
         Spacer(Modifier.width(16.dp))
-        Text(label)
+        Text(label, Modifier.weight(1f))
+        checked?.let { Checkbox(it, null) }
     }
 }
+
+@Composable
+private fun AppChecklist(l: Launcher, p: Popup.Checklist) {
+    var query by remember { mutableStateOf("") }
+    val ids = p.ids(l.layout)
+    // Ticked first, in the order the list opened with, so a tap does not move the row away.
+    val ticked = remember { ids.mapNotNull(l.find).toSet() }
+    PickerDialog(l, p.title, query, { query = it }) {
+        items(search(l.apps.sortedByDescending { it in ticked }, query) { it.label }, key = { it.id }) { app ->
+            PickerRow(app.icon, app.label, checked = ids.any { l.find(it) == app }) {
+                l.update { p.put(it, p.ids(it).toggled(app, app.id, l.find)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConfirmDialog(l: Launcher, p: Popup.Confirm) = AlertDialog(
+    onDismissRequest = { l.popup = null },
+    title = { DialogTitle(p.title) },
+    text = { Text(p.text) },
+    confirmButton = {
+        TextButton({
+            l.popup = null
+            p.onYes()
+        }) { Text(p.action) }
+    },
+    dismissButton = { TextButton({ l.popup = null }) { Text("Cancelar") } },
+)
 
 @Composable
 private fun NameDialog(l: Launcher, p: Popup.Rename) {
     var name by remember { mutableStateOf(p.initial) }
     AlertDialog(
         onDismissRequest = { l.popup = null },
-        title = { Text(p.title) },
-        text = { OutlinedTextField(name, { name = it }, singleLine = true) },
+        title = { DialogTitle(p.title) },
+        text = { OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), singleLine = true) },
         confirmButton = {
             TextButton({
                 l.popup = null
@@ -1094,53 +1176,505 @@ private fun PauseScreen(l: Launcher, p: Popup.Pause) {
     }
 }
 
+// --- Settings: Nova's sections, over the wallpaper ---
+
+// Nova's settings, measured on its screenshots.
+private val MUTED = Color(0xFF919191) // line icons, group titles, grid cells, − and +, switch track, dialog buttons
+private val BAR = Color(0xFF0C0C0C) // a section's app bar
+private val DIVIDER = Color(0xFF3F3F3F)
+
+/** Google Sans at [weight], as in Nova's titles: a Pixel system family; other phones get the default sans. */
+private fun googleSans(weight: Int) = FontFamily(
+    Typeface(android.graphics.Typeface.create(android.graphics.Typeface.create("google-sans", android.graphics.Typeface.NORMAL), weight, false)),
+)
+private val TITLE_FONT = googleSans(500)
+private val HEADER_FONT = googleSans(700)
+
+/** The dynamic dark scheme in Nova's greys, so stock switches, checkboxes, fields, dialogs and text buttons match it. */
 @Composable
-private fun BackupDialog(l: Launcher) = AlertDialog(
-    onDismissRequest = { l.popup = null },
-    title = { Text("Copia del escritorio") },
-    text = {
-        Column {
-            Text(
-                "Guardá en un archivo el escritorio, el dock, las pestañas y los venenos, o restauralos desde uno. " +
-                    "Restaurar reemplaza lo que hay; los widgets que falten se vuelven a configurar tocándolos.",
-            )
-            Text("Copia automática semanal", Modifier.padding(top = 16.dp), style = MaterialTheme.typography.titleSmall)
-            val folder = l.backupFolder
-            Text(
-                folder?.let { "En ${DocumentsContract.getTreeDocumentId(it).substringAfter(':').ifEmpty { "la carpeta elegida" }}" } ?: "Apagada",
-                color = TAB_OFF_TEXT,
-            )
-            Row {
-                TextButton({
-                    l.popup = null
-                    l.chooseBackupFolder()
-                }) { Text(if (folder == null) "Elegir carpeta" else "Cambiar carpeta") }
-                if (folder != null) TextButton(l::stopAutoBackup) { Text("Apagar") }
+private fun novaColors(): ColorScheme {
+    val context = LocalContext.current
+    // Remembered: a new scheme on every LauncherScreen recomposition would invalidate the whole tree.
+    return remember(context) {
+        dynamicDarkColorScheme(context).copy(
+            primary = MUTED,
+            onPrimary = Color(0xFF1A1C1C), // a checked switch's thumb, a checkbox's tick
+            onSurface = Color(0xFFFCFCFC),
+            onSurfaceVariant = Color(0xFFBDBDBD), // summaries, dialog text
+            surfaceContainerHigh = TRACK, // dialogs; Nova's #0F0F0F all but vanishes over the black pages
+            surfaceContainerHighest = Color.Black, // an unchecked switch's track
+        )
+    }
+}
+
+/** A line icon on a 24-unit square, like Nova's settings icons. Literal coordinates only: it runs scaled. */
+private typealias Glyph = DrawScope.(Color) -> Unit
+
+private val LINE = Stroke(1.8f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+
+/** A polyline through x0, y0, x1, y1, … */
+private fun DrawScope.line(color: Color, vararg xy: Float) = drawPath(
+    Path().apply {
+        moveTo(xy[0], xy[1])
+        for (i in 2..<xy.size step 2) lineTo(xy[i], xy[i + 1])
+    },
+    color,
+    style = LINE,
+)
+
+private val PHONE: Glyph = { c -> // a phone between two brackets: Nova's home screen
+    drawRoundRect(c, Offset(7f, 3f), Size(10f, 18f), CornerRadius(2f), style = LINE)
+    line(c, 3f, 8f, 3f, 16f)
+    line(c, 21f, 8f, 21f, 16f)
+}
+private val APPS: Glyph = { c -> // 3 × 3 dots in a ring: Nova's drawer
+    drawCircle(c, 9.5f, Offset(12f, 12f), style = LINE)
+    for (i in 0..8) drawCircle(c, 1.3f, Offset(8f + i % 3 * 4, 8f + i / 3 * 4))
+}
+private val DOCK_BAR: Glyph = { c -> // a phone with its dock
+    drawRoundRect(c, Offset(6f, 2.5f), Size(12f, 19f), CornerRadius(2f), style = LINE)
+    line(c, 6f, 16f, 18f, 16f)
+    for (i in 0..2) drawCircle(c, 1f, Offset(9f + i * 3, 18.8f))
+}
+private val TAP: Glyph = { c -> // a touch and its rings
+    drawCircle(c, 2.5f, Offset(12f, 12f))
+    drawCircle(c, 6f, Offset(12f, 12f), style = LINE)
+    drawCircle(c.copy(alpha = c.alpha / 2), 10f, Offset(12f, 12f), style = LINE)
+}
+private val RESTORE: Glyph = { c -> // clock hands in an arc that turns back
+    drawArc(c, 180f, 300f, false, Offset(4f, 4f), Size(16f, 16f), style = LINE)
+    line(c, 1.5f, 9.5f, 4f, 12.5f, 6.5f, 9.5f)
+    line(c, 12f, 8f, 12f, 12f, 15f, 14f)
+}
+private val HOUSE: Glyph = { c ->
+    line(c, 3f, 11f, 12f, 3.5f, 21f, 11f)
+    line(c, 5.5f, 9f, 5.5f, 20f, 18.5f, 20f, 18.5f, 9f)
+}
+private val TRASH: Glyph = { c ->
+    line(c, 4f, 7f, 20f, 7f)
+    line(c, 9.5f, 7f, 9.5f, 4f, 14.5f, 4f, 14.5f, 7f)
+    line(c, 6f, 7f, 7f, 20f, 17f, 20f, 18f, 7f)
+}
+private val BACK: Glyph = { c ->
+    line(c, 19.5f, 12f, 4.5f, 12f)
+    line(c, 11f, 5.5f, 4.5f, 12f, 11f, 18.5f)
+}
+private val UP: Glyph = { c -> line(c, 6f, 15f, 12f, 9f, 18f, 15f) }
+private val DOWN: Glyph = { c -> line(c, 6f, 9f, 12f, 15f, 18f, 9f) }
+
+/** Nova's − and + buttons: a black sign on a disc. */
+private fun disc(plus: Boolean): Glyph = { c ->
+    drawCircle(c, 10f, Offset(12f, 12f))
+    line(Color.Black, 7f, 12f, 17f, 12f)
+    if (plus) line(Color.Black, 12f, 7f, 12f, 17f)
+}
+private val LESS = disc(plus = false)
+private val MORE = disc(plus = true)
+
+@Composable
+private fun GlyphIcon(glyph: Glyph, color: Color, modifier: Modifier = Modifier) =
+    Canvas(modifier.size(24.dp)) { scale(size.width / 24f, Offset.Zero) { glyph(color) } }
+
+/** [glyph] in an M3 icon button: 48 dp to touch, dimmed when not [enabled]. [label] is what TalkBack reads. */
+@Composable
+private fun IconAction(glyph: Glyph, label: String, tint: Color = MUTED, enabled: Boolean = true, onClick: () -> Unit) = IconButton(
+    onClick,
+    Modifier.semantics { contentDescription = label },
+    enabled = enabled,
+    colors = IconButtonDefaults.iconButtonColors(contentColor = tint),
+) { GlyphIcon(glyph, LocalContentColor.current) }
+
+private enum class Section(val title: String, val glyph: Glyph) {
+    DESKTOP("Escritorio", PHONE), DRAWER("Cajón de apps", APPS), DOCK("Dock", DOCK_BAR), GESTURES("Gestos", TAP), BACKUP("Copia de seguridad", RESTORE)
+}
+
+@Composable
+private fun SettingsScreen(l: Launcher) {
+    var section by remember { mutableStateOf<Section?>(null) }
+    val back = { if (section != null) section = null else l.settingsOpen = false }
+    BackHandler(onBack = back)
+    // Clear, over the hidden Home, so a preview strip shows the wallpaper; a Surface still takes every touch.
+    Surface(Modifier.fillMaxSize(), color = Color.Transparent, contentColor = MaterialTheme.colorScheme.onSurface) {
+        val s = section
+        // Separate branches, so the main list and each section get their own scroll position.
+        if (s == null) MainList(l) { section = it } else Column {
+            Bar(s.title, back)
+            val layout = l.layout
+            when (s) {
+                Section.DESKTOP -> {
+                    // The main page's own icons, in reading order.
+                    val mine = layout.desktop.getOrNull(layout.defaultPage).orEmpty().filterIsInstance<Item.Icon>()
+                        .sortedWith(compareBy({ it.cell.y }, { it.cell.x })).map { it.target }
+                    PreviewIcons(l, mine.ifEmpty { l.apps.map { Target.App(it.id) } }, layout.columns, ICON, labels = true, Modifier.height(148.dp))
+                }
+                Section.DRAWER -> DrawerPreview(l, layout)
+                Section.DOCK -> PreviewIcons(l, layout.dock.firstOrNull().orEmpty().take(layout.dockSize).map { it.tap }, layout.dockSize, ICON, labels = false, Modifier.height(120.dp))
+                else -> Unit
+            }
+            Column(Modifier.weight(1f).fillMaxWidth().background(Color.Black).verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 16.dp)) {
+                when (s) {
+                    Section.DESKTOP -> DesktopSettings(l, layout)
+                    Section.DRAWER -> DrawerSettings(l, layout)
+                    Section.DOCK -> DockSettings(l, layout)
+                    Section.GESTURES -> {
+                        Header("Escritorio", divider = false)
+                        SettingRow("Doble toque", l.labelOf(layout.doubleTap).replaceFirstChar { it.uppercase() }, {
+                            l.popup = Popup.PickApp("Al tocar dos veces") { app -> l.update { it.copy(doubleTap = app?.let { a -> Target.App(a.id) }) } }
+                        }) { layout.doubleTap?.let { Box(Modifier.padding(end = 8.dp)) { TargetIcon(l, it, 36.dp) } } }
+                    }
+                    Section.BACKUP -> BackupSettings(l)
+                }
             }
         }
-    },
-    confirmButton = {
-        Row {
-            TextButton({
-                l.popup = null
-                l.restoreBackup()
-            }) { Text("Restaurar") }
-            TextButton({
-                l.popup = null
-                l.saveBackup()
-            }) { Text("Guardar") }
+    }
+}
+
+/** Nova's first page: a big title over one row per section. No back arrow, as in Nova: system back closes it. */
+@Composable
+private fun MainList(l: Launcher, open: (Section) -> Unit) {
+    val layout = l.layout
+    Column(Modifier.fillMaxSize().background(Color.Black).statusBarsPadding().verticalScroll(rememberScrollState()).navigationBarsPadding()) {
+        Text("Ajustes", Modifier.padding(start = 24.dp, top = 88.dp, bottom = 32.dp), fontSize = 32.sp, fontFamily = TITLE_FONT)
+        for (s in Section.entries) {
+            val summary = when (s) {
+                Section.DESKTOP -> "Grilla ${layout.columns} × ${layout.rows} · ${count(layout.desktop.size, "página", "páginas")}"
+                Section.DRAWER -> "Grilla ${layout.drawerColumns} × ${layout.drawerRows} · ${layout.tabs.joinToString(" · ") { it.name }}"
+                Section.DOCK -> "${count(layout.dockSize, "ícono", "íconos")} · ${count(layout.dock.size, "página", "páginas")}"
+                Section.GESTURES -> "Doble toque: ${l.labelOf(layout.doubleTap).replaceFirstChar { it.uppercase() }}"
+                Section.BACKUP -> l.backupFolder?.let { "Copia semanal en ${folderName(it)}" } ?: "Guardar, restaurar, importar de Nova"
+            }
+            SettingRow(s.title, summary, { open(s) }, s.glyph)
         }
-    },
-    dismissButton = { TextButton({ l.popup = null }) { Text("Cancelar") } },
-)
+        SettingRow("App de inicio", "La que abre el botón de inicio del teléfono", {
+            l.startIntent(Intent(Settings.ACTION_HOME_SETTINGS), "los ajustes")
+        }, HOUSE)
+    }
+}
+
+/** Nova's section bar, painted under the status bar. */
+@Composable
+private fun Bar(title: String, onBack: () -> Unit) = Row(
+    Modifier.fillMaxWidth().background(BAR).statusBarsPadding().height(64.dp).padding(start = 10.dp),
+    verticalAlignment = Alignment.CenterVertically,
+) {
+    IconAction(BACK, "Volver", MaterialTheme.colorScheme.onSurface, onClick = onBack)
+    Text(title, Modifier.padding(start = 11.dp), fontSize = 22.sp, fontFamily = TITLE_FONT)
+}
+
+/** Nova's preview strip: [columns] cells sized as Home sizes them; a null target is an empty dock slot. Clear: the wallpaper shows. */
+@Composable
+private fun PreviewIcons(l: Launcher, targets: List<Target?>, columns: Int, nova: Dp, labels: Boolean, modifier: Modifier) =
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val icon = iconSize(nova, maxWidth / columns, maxHeight - if (labels) LABEL_SPACE else 0.dp)
+        Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+            repeat(columns) { i ->
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (i < targets.size) {
+                        val target = targets[i]
+                        if (target == null) AppImage(null, icon) else TargetIcon(l, target, icon)
+                        if (labels && target != null) {
+                            Text(l.labelOf(target), Modifier.padding(top = 6.dp, start = 4.dp, end = 4.dp), style = LABEL, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+/** The drawer as it opens: its tabs with the first one on, and a row of that tab's apps. */
+@Composable
+private fun DrawerPreview(l: Launcher, layout: Layout) = Column(Modifier.fillMaxWidth().background(Color.Black)) {
+    // Bubbles, not Tabs: its long press would bring the drawer's unconfirmed "Eliminar" into Ajustes.
+    LazyRow(Modifier.padding(top = TAB_GAP), contentPadding = PaddingValues(horizontal = 24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        itemsIndexed(layout.tabs) { i, tab -> Bubble(tab.name, i == 0, Modifier) }
+    }
+    val apps = layout.tabs.firstOrNull()?.let { tabApps(it, layout.tabs, l.apps, l.find, layout.hidden) } ?: l.apps
+    PreviewIcons(l, apps.take(layout.drawerColumns).map { Target.App(it.id) }, layout.drawerColumns, DRAWER_ICON, labels = true, Modifier.height(128.dp).padding(horizontal = 8.dp))
+}
+
+@Composable
+private fun DesktopSettings(l: Launcher, layout: Layout) {
+    Header("Diseño", divider = false)
+    GridSetting(l, "Grilla del escritorio", layout.columns, layout.rows, { c, r -> gridNote(l.layout, c, r) }) { c, r ->
+        l.update { it.withGrid(c, r) }
+    }
+    Header("Páginas")
+    layout.desktop.forEachIndexed { i, items ->
+        val main = i == layout.defaultPage
+        val summary = listOfNotNull("Principal".takeIf { main }, if (items.isEmpty()) "Vacía" else count(items.size, "elemento", "elementos"))
+        SettingRow("Página ${i + 1}", summary.joinToString(" · ")) {
+            // Nova marks the main page with a house; another page's house makes it the main one.
+            if (main) GlyphIcon(HOUSE, ACCENT, Modifier.padding(12.dp))
+            else IconAction(HOUSE, "Hacer principal") { l.update { it.copy(defaultPage = i) } }
+            if (layout.desktop.size > 1) IconAction(TRASH, "Quitar") {
+                val remove = { l.update { it.withoutPage(i) } }
+                if (items.isEmpty()) remove()
+                else l.popup = Popup.Confirm(
+                    "Quitar la página ${i + 1}",
+                    (if (items.size == 1) "Su elemento pasa" else "Sus ${items.size} elementos pasan") + " al lugar libre más cercano de otra página.",
+                    "Quitar",
+                    remove,
+                )
+            }
+        }
+    }
+    if (layout.desktop.size < MAX_PAGES) AddRow("Agregar página") { l.update { it.copy(desktop = it.desktop + listOf(emptyList())) } }
+}
+
+/** What Listo would do to the desktop, from [withGrid] itself. */
+private fun gridNote(layout: Layout, columns: Int, rows: Int): String {
+    val next = layout.withGrid(columns, rows)
+    val moved = layout.desktop.withIndex().sumOf { (i, page) -> page.count { it !in next.desktop[i] } }
+    val added = next.desktop.size - layout.desktop.size
+    val note = if (moved == 0) "Todo queda en su lugar." else count(moved, "elemento pasa", "elementos pasan") + " al lugar libre más cercano."
+    return note + when (added) {
+        0 -> ""
+        1 -> " Se suma una página."
+        else -> " Se suman $added páginas."
+    }
+}
+
+@Composable
+private fun DrawerSettings(l: Launcher, layout: Layout) {
+    Header("Diseño", divider = false)
+    GridSetting(l, "Grilla del cajón", layout.drawerColumns, layout.drawerRows, { _, _ -> "Las filas son las que entran en pantalla; marcan su alto." }) { c, r ->
+        l.update { it.copy(drawerColumns = c, drawerRows = r) }
+    }
+    Header("Pestañas")
+    layout.tabs.forEachIndexed { i, tab ->
+        val summary = if (tab.apps == null) "Todas las apps" else count(tab.apps.size, "app", "apps") + if (tab.hideApps) " · fuera de las demás" else ""
+        fun move(to: Int) = l.update { it.copy(tabs = it.tabs.toMutableList().apply { add(to, removeAt(i)) }) }
+        SettingRow(tab.name, summary, { l.popup = Popup.EditTab(i) }) {
+            IconAction(UP, "Subir", enabled = i > 0) { move(i - 1) }
+            IconAction(DOWN, "Bajar", enabled = i < layout.tabs.lastIndex) { move(i + 1) }
+        }
+    }
+    AddRow("Agregar pestaña") {
+        l.popup = Popup.Rename("Nueva pestaña", "") { name -> l.update { it.copy(tabs = it.tabs + Tab(name, emptySet(), hideApps = true)) } }
+    }
+    Header("Apps")
+    val hidden = layout.hidden.mapNotNull(l.find).toSet().size
+    SettingRow("Apps ocultas", if (hidden == 0) "Ninguna; la búsqueda las encuentra igual" else count(hidden, "app", "apps"), {
+        l.popup = Popup.Checklist("Apps ocultas", { it.hidden }, { layout, ids -> layout.copy(hidden = ids) })
+    })
+    val poisons = layout.poisons.mapNotNull(l.find).toSet().size
+    SettingRow("Venenos", if (poisons == 0) "Apps que abren tras una pausa" else count(poisons, "app", "apps"), {
+        l.popup = Popup.Checklist("Venenos", { it.poisons }, { layout, ids -> layout.copy(poisons = ids) })
+    })
+}
+
+/** Renames drawer tab [i]; a tab of chosen apps can also leave the others or go. */
+@Composable
+private fun TabDialog(l: Launcher, i: Int, tab: Tab) {
+    val onClose = { l.popup = null }
+    var name by remember { mutableStateOf(tab.name) }
+    var hide by remember { mutableStateOf(tab.hideApps) }
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { DialogTitle("Pestaña") },
+        text = {
+            Column {
+                OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), singleLine = true)
+                if (tab.apps != null) {
+                    Row(Modifier.padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Sacar sus apps de las pestañas de todas", Modifier.weight(1f).padding(end = 16.dp), fontSize = 16.sp)
+                        Switch(hide, { hide = it })
+                    }
+                    // In the body and the accent, away from Listo: the one action here that loses something.
+                    Row(
+                        Modifier
+                            .padding(top = 8.dp)
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                onClose()
+                                val remove = { l.update { it.copy(tabs = it.tabs.filterIndexed { j, _ -> j != i }) } }
+                                if (tab.apps.isEmpty()) remove()
+                                else l.popup = Popup.Confirm("Quitar «${tab.name}»", "Las apps siguen instaladas; solo se pierde esta lista.", "Quitar", remove)
+                            }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        GlyphIcon(TRASH, ACCENT, Modifier.padding(end = 12.dp))
+                        Text("Quitar pestaña", color = ACCENT, fontSize = 16.sp)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton({
+                onClose()
+                l.update { it.copy(tabs = it.tabs.replaced(i) { t -> t.copy(name = name.trim(), hideApps = hide) }) }
+            }, enabled = name.isNotBlank()) { Text("Listo") }
+        },
+        dismissButton = { TextButton(onClose) { Text("Cancelar") } },
+    )
+}
+
+@Composable
+private fun DockSettings(l: Launcher, layout: Layout) {
+    Header("Diseño", divider = false)
+    SettingRow("Íconos por página", "Los que sobren se guardan hasta que vuelva a haber lugar") {
+        Stepper(layout.dockSize) { n -> l.update { it.withDockSize(n) } }
+    }
+    SettingRow("Desplazamiento infinito", "De la última página se pasa a la primera", { l.update { it.copy(dockWraps = !it.dockWraps) } }) {
+        Switch(layout.dockWraps, { wraps -> l.update { it.copy(dockWraps = wraps) } })
+    }
+    Header("Páginas")
+    layout.dock.forEachIndexed { i, icons ->
+        val used = icons.count { it != DockIcon() }
+        SettingRow("Página ${i + 1}", if (used == 0) "Vacía" else count(used, "ícono", "íconos")) {
+            if (layout.dock.size > 1) IconAction(TRASH, "Quitar") {
+                val remove = { l.update { it.copy(dock = it.dock.filterIndexed { j, _ -> j != i }) } }
+                if (used == 0) remove()
+                else l.popup = Popup.Confirm("Quitar la página ${i + 1}", "Se quitan sus íconos del dock y lo que abren al deslizarlos.", "Quitar", remove)
+            }
+        }
+    }
+    if (layout.dock.size < MAX_PAGES) AddRow("Agregar página") { l.update { it.copy(dock = it.dock + listOf(List(it.dockSize) { DockIcon() })) } }
+}
+
+@Composable
+private fun BackupSettings(l: Launcher) {
+    Header("Manual", divider = false)
+    SettingRow("Guardar copia", "Escritorio, dock, pestañas, venenos y ajustes, en un archivo", l::saveBackup)
+    SettingRow("Restaurar copia", "Reemplaza todo por lo de un archivo guardado", {
+        l.popup = Popup.Confirm(
+            "Restaurar una copia",
+            "Reemplaza el escritorio, el dock, las pestañas y los ajustes. Los widgets que falten se vuelven a configurar tocándolos.",
+            "Elegir archivo",
+            l::restoreBackup,
+        )
+    })
+    Header("Automática")
+    val folder = l.backupFolder
+    // The switch reads backupFolder, so cancelling the picker leaves it off; the row picks another folder.
+    SettingRow("Copia semanal", folder?.let { "En ${folderName(it)}" } ?: "Apagada", l::chooseBackupFolder) {
+        Switch(folder != null, { on -> if (on) l.chooseBackupFolder() else l.stopAutoBackup() })
+    }
+    Header("Nova Launcher")
+    SettingRow("Importar de Nova", "Desde un archivo .novabackup", {
+        l.popup = Popup.Confirm(
+            "Importar de Nova",
+            "Reemplaza el escritorio, el dock, las pestañas, las apps ocultas y las grillas; los venenos quedan. " +
+                "Los widgets se vuelven a configurar tocándolos.",
+            "Elegir archivo",
+            l::importNova,
+        )
+    })
+}
+
+private fun folderName(tree: Uri) = DocumentsContract.getTreeDocumentId(tree).substringAfter(':').ifEmpty { "la carpeta elegida" }
+
+private fun count(n: Int, one: String, many: String) = if (n == 1) "1 $one" else "$n $many"
+
+/** A row of Ajustes: [icon] on the main list, [trailing] for its buttons, switch or picture. */
+@Composable
+private fun SettingRow(title: String, summary: String? = null, onClick: (() -> Unit)? = null, icon: Glyph? = null, trailing: @Composable () -> Unit = {}) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .heightIn(min = 72.dp)
+            .padding(start = if (icon != null) 34.dp else 24.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        icon?.let { GlyphIcon(it, MUTED, Modifier.padding(end = 20.dp)) }
+        Column(Modifier.weight(1f).padding(end = 8.dp)) {
+            Text(title, fontSize = 18.sp, lineHeight = 22.sp)
+            summary?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, lineHeight = 17.sp) }
+        }
+        trailing()
+    }
+}
+
+/** "Agregar …": an accent + so it reads as an action, not one more item. */
+@Composable
+private fun AddRow(title: String, onClick: () -> Unit) = SettingRow(title, onClick = onClick) { GlyphIcon(MORE, ACCENT, Modifier.padding(12.dp)) }
+
+/** A group's title in Nova's bold grey; [divider] puts Nova's short centred line between it and the group above. */
+@Composable
+private fun Header(text: String, divider: Boolean = true) {
+    if (divider) Box(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(128.dp, 3.dp).background(DIVIDER, CircleShape))
+    }
+    Text(text, Modifier.padding(start = 24.dp, top = 16.dp, bottom = 4.dp), color = MUTED, fontSize = 14.sp, fontFamily = HEADER_FONT)
+}
+
+/** Nova's − n + or, [vertical], + n −, within GRID_SIZES; SpaceBetween spreads it over a wider [modifier]. */
+@Composable
+private fun Stepper(value: Int, modifier: Modifier = Modifier, vertical: Boolean = false, onChange: (Int) -> Unit) {
+    val less = @Composable { IconAction(LESS, "Menos", enabled = value > GRID_SIZES.first) { onChange(value - 1) } }
+    val more = @Composable { IconAction(MORE, "Más", enabled = value < GRID_SIZES.last) { onChange(value + 1) } }
+    // A fixed box, so the buttons stay put between 9 and 10.
+    val number = @Composable {
+        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { Text("$value", color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp) }
+    }
+    if (vertical) Column(modifier) { more(); number(); less() }
+    else Row(modifier, Arrangement.SpaceBetween, Alignment.CenterVertically) { less(); number(); more() }
+}
+
+/** Nova's grid picture: a rounded square centred in each of [columns] × [rows] cells. */
+@Composable
+private fun GridCells(columns: Int, rows: Int, modifier: Modifier) = Canvas(modifier) {
+    val cell = Size(size.width / columns, size.height / rows)
+    val side = cell.minDimension * 0.88f
+    for (x in 0..<columns) for (y in 0..<rows) {
+        val at = Offset((x + 0.5f) * cell.width - side / 2, (y + 0.5f) * cell.height - side / 2)
+        drawRoundRect(MUTED, at, Size(side, side), CornerRadius(side * 0.26f))
+    }
+}
+
+@Composable
+private fun GridSetting(l: Launcher, title: String, columns: Int, rows: Int, note: (Int, Int) -> String, onDone: (Int, Int) -> Unit) =
+    SettingRow(title, "$columns × $rows", { l.popup = Popup.Grid(title, columns, rows, note, onDone) }) {
+        GridCells(columns, rows, Modifier.padding(end = 8.dp).size(48.dp, 60.dp))
+    }
+
+/** Nova's dialog title: centred and bold. */
+@Composable
+private fun DialogTitle(text: String) = Text(text, Modifier.fillMaxWidth(), textAlign = TextAlign.Center, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+
+/** Applies both sizes at once, so items move only for the final grid. */
+@Composable
+private fun GridDialog(l: Launcher, p: Popup.Grid) {
+    var c by remember { mutableIntStateOf(p.columns) }
+    var r by remember { mutableIntStateOf(p.rows) }
+    val note = remember(c, r) { p.note(c, r) }
+    AlertDialog(
+        onDismissRequest = { l.popup = null },
+        title = { DialogTitle(p.title) },
+        text = {
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                // As in Nova: columns under the cells, rows beside the last ones. No size depends on c or r,
+                // so a button stays under the finger.
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Column(Modifier.weight(1f, fill = false).widthIn(max = 256.dp)) {
+                        GridCells(c, r, Modifier.fillMaxWidth().aspectRatio(256f / 332f))
+                        Stepper(c, Modifier.fillMaxWidth().padding(top = 8.dp)) { c = it }
+                    }
+                    Stepper(r, Modifier.padding(start = 16.dp, bottom = 56.dp), vertical = true) { r = it }
+                }
+                Text(note, Modifier.padding(top = 16.dp), textAlign = TextAlign.Center, style = MaterialTheme.typography.bodyMedium)
+            }
+        },
+        confirmButton = {
+            TextButton({
+                l.popup = null
+                if (c != p.columns || r != p.rows) p.onDone(c, r)
+            }) { Text("Listo") }
+        },
+        dismissButton = { TextButton({ l.popup = null }) { Text("Cancelar") } },
+    )
+}
 
 /** Shown by [PinActivity] over whatever app asked to add a shortcut. */
 @Composable
 fun PinDialog(label: String, from: String, onCancel: () -> Unit, onAdd: () -> Unit) {
-    MaterialTheme(colorScheme = dynamicDarkColorScheme(LocalContext.current)) {
+    MaterialTheme(colorScheme = novaColors()) {
         AlertDialog(
             onDismissRequest = onCancel,
-            title = { Text("Agregar al escritorio") },
+            title = { DialogTitle("Agregar al escritorio") },
             text = { Text("«$label», de $from") },
             confirmButton = { TextButton(onAdd) { Text("Agregar") } },
             dismissButton = { TextButton(onCancel) { Text("Cancelar") } },

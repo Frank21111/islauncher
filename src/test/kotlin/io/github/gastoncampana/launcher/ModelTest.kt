@@ -34,8 +34,8 @@ class ModelTest {
         val layout = Layout(
             dock = listOf(
                 listOf(DockIcon(App("a/a.A#0"), up = Shortcut("b", "VOICE", "Voz"), down = App("c/c.C#10"))) +
-                    List(DOCK_SIZE - 1) { DockIcon() },
-                List(DOCK_SIZE) { DockIcon() },
+                    List(3) { DockIcon() },
+                List(4) { DockIcon() } + DockIcon(App("x/x.X#0")), // hidden by the smaller dock, kept
             ),
             desktop = listOf(
                 listOf(
@@ -51,6 +51,12 @@ class ModelTest {
             doubleTap = Shortcut("rec", "quick_record", "Grabar"),
             hidden = setOf("i/i.I#0"),
             poisons = setOf("i/i.I#0", "t/t.T#0"),
+            columns = 6,
+            rows = 7,
+            dockSize = 4,
+            dockWraps = false,
+            drawerColumns = 4,
+            drawerRows = 8,
         )
         assertEquals(layout, parseLayout(layout.toJson()))
     }
@@ -83,7 +89,7 @@ class ModelTest {
             listOf(live, gone.copy(widgetId = 0), other.copy(widgetId = 0), icon),
             backup.restored(mapOf(7 to "w", 9 to "x")).desktop[0],
         )
-        val huge = Layout(dock = List(5000) { List(DOCK_SIZE) { DockIcon() } }, desktop = List(5000) { emptyList() }, defaultPage = 4999)
+        val huge = Layout(dock = List(5000) { List(5) { DockIcon() } }, desktop = List(5000) { emptyList() }, defaultPage = 4999)
         val capped = huge.restored(emptyMap())
         assertEquals(MAX_PAGES to MAX_PAGES, capped.dock.size to capped.desktop.size)
         assertEquals(0, capped.defaultPage)
@@ -92,8 +98,75 @@ class ModelTest {
     @Test
     fun parsePadsDockPagesAndClampsDefaultPage() {
         val layout = parseLayout("""{"dock":[[{}]],"desktop":[[]],"defaultPage":4,"tabs":[]}""")
-        assertEquals(listOf(List(DOCK_SIZE) { DockIcon() }), layout.dock)
+        assertEquals(listOf(List(5) { DockIcon() }), layout.dock)
         assertEquals(0, layout.defaultPage)
+        // Grid sizes from a hand-edited file stay in range.
+        val wild = parseLayout("""{"dock":[[]],"desktop":[[]],"tabs":[],"columns":99,"rows":0,"dockSize":3,"drawerColumns":-1}""")
+        assertEquals(listOf(GRID_SIZES.last, GRID_SIZES.first, GRID_SIZES.first), listOf(wild.columns, wild.rows, wild.drawerColumns))
+        assertEquals(listOf(List(3) { DockIcon() }), wild.dock)
+    }
+
+    @Test
+    fun aSmallerDockHidesItsLastIconsUntilItGrowsAgain() {
+        val last = DockIcon(App("e/e.E#0"))
+        val layout = Layout(dock = listOf(List(4) { DockIcon() } + last))
+        assertEquals(listOf(List(4) { DockIcon() } + last), layout.withDockSize(3).dock)
+        assertEquals(listOf(List(4) { DockIcon() } + last + DockIcon()), layout.withDockSize(3).withDockSize(6).dock)
+    }
+
+    @Test
+    fun shrinkingTheGridMovesWhatNoLongerFits() {
+        val a = Item.Icon(App("a/a.A#0"), "A", Cell(0f, 0f))
+        val far = Item.Icon(App("b/b.B#0"), "B", Cell(4f, 4f))
+        val wide = Item.Widget("w", 7, Cell(0f, 1f, 5f, 1f))
+        val layout = Layout(desktop = listOf(listOf(a, far, wide), emptyList()))
+        // To the nearest free spot on its page; a widget wider than the grid shrinks to it.
+        assertEquals(
+            listOf(listOf(a, far.copy(cell = Cell(3f, 3f)), wide.copy(cell = Cell(0f, 1f, 4f, 1f))), emptyList()),
+            layout.withGrid(4, 4).desktop,
+        )
+        assertEquals(layout.desktop, layout.withGrid(6, 6).desktop) // growing moves nothing
+        // A full page sends it to another page with room, else to a new one.
+        val full = Item.Widget("f", 1, Cell(0f, 0f, 4f, 4f))
+        val out = Item.Icon(App("c/c.C#0"), "C", Cell(4f, 0f))
+        val moved = listOf(listOf(full), listOf(out.copy(cell = Cell(3f, 0f))))
+        assertEquals(moved, Layout(desktop = listOf(listOf(full, out), emptyList())).withGrid(4, 4).desktop)
+        assertEquals(moved, Layout(desktop = listOf(listOf(full, out))).withGrid(4, 4).desktop)
+        // Moves and new items stay inside a grid that is not square.
+        val tall = Layout(columns = 4, rows = 6)
+        assertEquals(listOf(a.copy(cell = Cell(3f, 5f))), tall.moved(null, a, 0, Cell(9f, 9f)).desktop[0])
+        assertEquals(Cell(0f, 5.5f, 4f, 0.5f), Layout(desktop = listOf(listOf(Item.Widget("t", 1, Cell(0f, 0f, 4f, 5.5f)))), columns = 4, rows = 6).freeCell(0, 4f, 0.5f))
+    }
+
+    @Test
+    fun removingAPageMovesItsItemsToTheOthers() {
+        val a = Item.Icon(App("a/a.A#0"), "A", Cell(0f, 0f))
+        val b = Item.Icon(App("b/b.B#0"), "B", Cell(0f, 0f))
+        val c = Item.Icon(App("c/c.C#0"), "C", Cell(2f, 3f))
+        val layout = Layout(desktop = listOf(listOf(a), listOf(b, c), emptyList()), defaultPage = 2)
+        val removed = layout.withoutPage(1)
+        assertEquals(listOf(listOf(a, b.copy(cell = Cell(1f, 0f)), c), emptyList()), removed.desktop)
+        assertEquals(1, removed.defaultPage) // still the same page
+        assertEquals(0, layout.withoutPage(2).defaultPage) // the main page itself: the first one takes over
+        val single = Layout(desktop = listOf(listOf(a)))
+        assertEquals(single, single.withoutPage(0)) // the last page stays
+    }
+
+    @Test
+    fun aWidgetBeingSetUpIsFoundWhereverItMoved() {
+        val w = Item.Widget("w", 0, Cell(0f, 0f, 2f, 1f))
+        val twin = w.copy(cell = Cell(0f, 2f, 2f, 1f))
+        val layout = Layout(desktop = listOf(listOf(twin), listOf(w)))
+        assertEquals(1 to w, layout.locate(1, w)) // where it was, though an equal one sits on another page
+        assertEquals(0 to twin, Layout(desktop = listOf(listOf(twin))).locate(1, w)) // its page was removed
+        assertNull(Layout().locate(0, w))
+    }
+
+    @Test
+    fun togglingMatchesAnAppUnderAnyOfItsIds() {
+        val find = finder(listOf("a/a.New#0", "b/b.B#0")) { it }
+        assertEquals(setOf("b/b.B#0"), setOf("a/a.Old#0", "b/b.B#0").toggled("a/a.New#0", "a/a.New#0", find))
+        assertEquals(setOf("b/b.B#0", "a/a.New#0"), setOf("b/b.B#0").toggled("a/a.New#0", "a/a.New#0", find))
     }
 
     @Test
@@ -131,9 +204,10 @@ class ModelTest {
             Item.Widget("w", 0, Cell(0f, 0f, 5f, 0.5f)),
             Item.Icon(App("a/a.A#0"), "A", Cell(0f, 0.5f)),
         )
-        assertEquals(Cell(1f, 0.5f), freeCell(items, 1f, 1f))
-        assertEquals(Cell(0f, 1.5f, 5f, 2f), freeCell(items, 5f, 2f))
-        assertNull(freeCell(listOf(Item.Widget("w", 0, Cell(0f, 0f, GRID.toFloat(), GRID.toFloat()))), 1f, 1f))
+        val layout = Layout(desktop = listOf(items, listOf(Item.Widget("w", 0, Cell(0f, 0f, 5f, 5f)))))
+        assertEquals(Cell(1f, 0.5f), layout.freeCell(0, 1f, 1f))
+        assertEquals(Cell(0f, 1.5f, 5f, 2f), layout.freeCell(0, 5f, 2f))
+        assertNull(layout.freeCell(1, 1f, 1f))
     }
 
     @Test
