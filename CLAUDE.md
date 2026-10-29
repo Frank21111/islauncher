@@ -46,5 +46,6 @@ a new one must too. Known gaps: notifications, recents, and an app picked inside
 
 The layout was first imported from a Nova backup; that importer was removed once done (see git history).
 Pinned shortcuts belong to the home app that pinned them: shortcuts Nova pinned must be re-added from their app.
+Browsers bake their own badge into the web shortcuts they pin, so those get no second one.
 
 UI strings are Spanish; code comments are English.

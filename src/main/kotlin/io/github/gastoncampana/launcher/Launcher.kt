@@ -332,6 +332,11 @@ class Launcher : ComponentActivity() {
     fun shortcutIcon(target: Target.Shortcut): ImageBitmap? =
         shortcutIconFile(target).takeIf { it.exists() }?.let { BitmapFactory.decodeFile(it.path)?.asImageBitmap() }
 
+    /** Browsers draw their own badge on the web shortcuts they pin (Chrome does). Hostless, so app links don't match. */
+    fun isBrowser(pkg: String) = packageManager.resolveActivity(
+        Intent(Intent.ACTION_VIEW, Uri.parse("https://")).addCategory(Intent.CATEGORY_BROWSABLE).setPackage(pkg), 0,
+    ) != null
+
     /** Hidden API; the status bar has no public way to open it. */
     fun expandNotifications() {
         try {

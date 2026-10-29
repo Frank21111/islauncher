@@ -946,8 +946,9 @@ private fun TargetIcon(l: Launcher, target: Target) {
         is Target.Shortcut -> Box(Modifier.size(ICON)) {
             val icon = remember(target) { l.shortcutIcon(target) }
             if (icon != null) Image(icon, target.label, Modifier.fillMaxSize()) else AppImage(app)
-            // The publishing app's badge, as Nova draws it.
-            if (app != null) Image(app.icon, null, Modifier.size(ICON * 0.4f).align(Alignment.BottomEnd).offset(4.dp, 2.dp))
+            // The publishing app's badge, as Nova draws it, unless the icon has one already.
+            val badged = remember(target, app) { l.isBrowser(target.pkg) } // app: a new one after each package change
+            if (app != null && !badged) Image(app.icon, null, Modifier.size(ICON * 0.4f).align(Alignment.BottomEnd).offset(4.dp, 2.dp))
         }
     }
 }
