@@ -50,6 +50,7 @@
     <string name="target_not_installed">no instalada</string>
     <string name="app_unavailable">La app no está instalada o está desactivada</string>
     <string name="shortcut_needs_home">Los atajos funcionan cuando Launcher es la app de inicio</string>
+    <string name="shortcut_add_to_home">Agregar «%1$s» al escritorio</string>
     <string name="shortcut_open_failed">No se pudo abrir «%1$s». Volvé a agregarlo desde su app</string>
 
     <!-- Home screen -->
@@ -101,6 +102,7 @@
     <string name="poison_go_back">No, volver</string>
     <string name="poison_open_in">Abrir en %1$d</string>
     <string name="poison_open_anyway">Abrir igual</string>
+    <string name="poison_open_instead">Abrir %1$s en su lugar</string>
 
     <!-- Settings -->
     <string name="settings_drawer">Cajón de apps</string>
@@ -163,6 +165,9 @@
     <string name="drawer_hidden_apps">Apps ocultas</string>
     <string name="drawer_hidden_apps_none">Ninguna; la búsqueda las encuentra igual</string>
     <string name="poison_summary_none">Apps que abren tras una pausa</string>
+    <string name="poison_instead">En vez de un veneno</string>
+    <string name="poison_instead_none">Una app que la pausa te ofrece en su lugar</string>
+    <string name="poison_pick_instead">Ofrecer en vez de un veneno</string>
 
     <string name="dock_icons_per_page">Íconos por página</string>
     <string name="dock_icons_per_page_summary">Los que sobren se guardan hasta que vuelva a haber lugar</string>
@@ -185,7 +190,7 @@
     <string name="backup_chosen_folder">la carpeta elegida</string>
     <string name="backup_import_nova">Importar de Nova</string>
     <string name="backup_import_nova_summary">Desde un archivo .novabackup</string>
-    <string name="backup_import_nova_text">Reemplaza el escritorio, el dock, las pestañas, las apps ocultas y las grillas; los venenos quedan. Los widgets se vuelven a configurar tocándolos.</string>
+    <string name="backup_import_nova_text">Reemplaza el escritorio, el dock, las pestañas, las apps ocultas y las grillas; los venenos y la app que ofrece la pausa quedan. Los widgets se vuelven a configurar tocándolos.</string>
     <string name="backup_saved">Copia guardada</string>
     <string name="backup_save_failed">No se pudo guardar la copia</string>
     <string name="backup_restored">Copia restaurada</string>

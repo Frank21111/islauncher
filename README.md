@@ -28,18 +28,30 @@ A launcher sees every app you have and every app you open, so this one is built 
   `EXTRA_LOCAL_ONLY`, so cloud providers are not offered as a destination. A local folder that another app syncs
   is still synced by that app.
 - **"Search with" hands your query to the app you tap.** The launcher itself sends nothing.
+- **An app you open from its icon learns where the icon was.** As every launcher does, this one passes the icon's
+  position on screen to the app (Android's source bounds), so the app can animate from it. Nothing else is passed on.
+- **App shortcuts are read only to show them.** Each time an app's menu opens, it asks Android for that app's
+  shortcuts, which can name recent chats, and keeps none of them. A shortcut you add to the home screen keeps its
+  label and icon, as any pinned shortcut does.
+- **Search learns from your opens, on the device only.** The launcher keeps a score per app of how often and how
+  recently you opened it. The score loses a tenth of its weight each day: an app opened once drops out after about
+  six weeks, one you opened every day a couple of months after you stop. Poison apps are never counted. The scores
+  are kept apart from the layout, so neither the manual nor the weekly backups carry them (a device-to-device
+  transfer can copy them, as it can the layout).
 - **Everything else stays in the app's private storage.** That covers the layout (JSON in SharedPreferences),
-  today's open counts for poison apps (older days are dropped), the weekly backup folder and the icons of pinned
-  shortcuts. Uninstalling deletes all of it, but not the backup files you saved elsewhere.
+  today's open counts for poison apps (older days are dropped), the search use scores, the weekly backup folder and
+  the icons of pinned shortcuts. Uninstalling deletes all of it, but not the backup files you saved elsewhere.
 
 ## Features
 
 **Home screen**
 
 - Desktop pages with apps, shortcuts and widgets on a grid that places items in half-cell steps.
-- Long-press an item for its menu (app info and remove, plus "set up again" on a widget), or drag it to move it.
+- Long-press an item for its menu (an app's shortcuts, app info and remove, plus "set up again" on a widget), or
+  drag it to move it.
   Holding a dragged item at the side of the screen flips to the page on that side.
 - Long-press an empty spot to add a widget, change the wallpaper or open the settings.
+- Icons on the desktop, in the dock and in the drawer shrink a little under your finger and spring back.
 - Widgets come from a searchable picker, grouped by app, that shows each widget's preview and size in cells. The
   preview is the one its app generates (Android 15+, once the launcher may bind widgets), else its preview layout,
   else its preview image. A widget takes the size its app asks for, fitted to the grid, at the first free spot of the
@@ -68,23 +80,32 @@ A launcher sees every app you have and every app you open, so this one is built 
   - a picked tab can take its apps out of the all-apps tabs, as new tabs do by default
   - long-press a tab to rename it, add a tab or remove a picked one; the settings also reorder them
 - Hidden apps are left out of every tab, but search still finds them.
-- Accent-insensitive search that ranks prefix matches first. The keyboard's Go key opens the first result.
+- Accent-insensitive search that ranks prefix matches first. Among equally good matches, the apps you open more
+  often and more recently come first, so `s` and Go opens the app you use, not a rarely used one. The keyboard's Go
+  key opens the first result. Without a query the tabs stay alphabetical.
 - A calculator: a query that is a sum, such as `125*3` or `(2+3)^2`, shows its result, and tapping the result copies
   it. It handles `x × ÷ ^ %` and parentheses. Both `.` and `,` count as the decimal point.
 - A "search with" row that hands the query to Google, DuckDuckGo, Play Store, Spotify or Firefox Focus.
 - A fast scroller. Pulling down at the top of the list closes the drawer.
-- Each app's menu can add it to the desktop, toggle its tabs, hide it, mark it as a poison or open its app info.
+- Each app's menu lists its shortcuts and can add it to the desktop, toggle its tabs, hide it, mark it as a poison
+  or open its app info.
   You can also drag an app onto the desktop or the dock.
 
 **Poisons**
 
 - Apps you mark as poisons open only after a pause: 10 seconds, plus 5 seconds for each time you already opened that
   app today. The pause screen shows today's count, and "go back" is the main button.
+- You can pick one healthy app in Settings → App drawer, such as a reading or habits app. The pause screen then
+  offers it under "go back" as "Open <app> instead", with no wait. If that app is a poison too, it gets its own pause.
 - The pause applies to every way the launcher opens an app: the drawer, desktop and dock icons, swipes, double tap,
-  its shortcuts on the desktop, search providers and the search bar buttons.
+  shortcuts on the desktop and in app menus, search providers and the search bar buttons.
 
-**Pinned shortcuts**
+**Shortcuts**
 
+- An app's menu (long-press it on the desktop, in the dock or in the drawer) starts with up to four of its shortcuts,
+  as in Nova, such as "New message", a recent chat or "Scan QR code". Tap one to open it, or its + to add it to the
+  home screen, where it goes on the main page or the first page with room. The shortcuts the app always offers come
+  first, but up to two of those it adds as you use it, such as recent chats, still make the list.
 - Supports "Add to home screen" from other apps, such as a browser's web shortcuts, while this is the default home
   app. You confirm each one, because any app in the foreground can send the request. It goes on the main page, or
   the first page with room.
@@ -100,7 +121,7 @@ A launcher sees every app you have and every app you open, so this one is built 
 - Desktop pages can be added, removed (their items move to other pages) and set as the main page. Dock pages can be
   added and removed; removing one deletes its icons, after asking. The desktop and the dock take up to 20 pages each.
 - The drawer section reorders, renames and removes tabs, sets whether a picked tab leaves the all-apps tabs, and
-  lists the hidden apps and the poisons to tick or untick.
+  lists the hidden apps and the poisons to tick or untick. It also picks the app the pause offers instead.
 - Haptic feedback (on by default, switch in Settings → Gestures): a light vibration on long presses, drops (a
   different one when there is no room), swipe gestures, the double tap and settings controls. The phone's own touch
   vibration setting still applies.
@@ -118,7 +139,7 @@ A launcher sees every app you have and every app you open, so this one is built 
   - drawer tabs and hidden apps
   - grid sizes (except the drawer's rows), the main page, the double-tap gesture and dock wrap-around
 
-  Your poisons are kept.
+  Your poisons and the app the pause offers instead are kept.
 
 ## Requirements
 
@@ -185,8 +206,8 @@ does not stop the app first, so it can lose the choice.
 - Or go to Settings → Apps → Default apps → Home app. The names vary by manufacturer.
 - The launcher's own settings (long-press an empty spot on the desktop) have a row that opens that system screen.
 
-Shortcuts (pinned ones and those imported from Nova) open only while this is the default home app, because Android
-allows that only for the default home app.
+Shortcuts (pinned ones and those imported from Nova) open only while this is the default home app, and app menus
+list shortcuts only then, because Android allows that only for the default home app.
 
 ## Permissions
 
@@ -205,19 +226,24 @@ may create widgets.
 
 - **Poisons only pause opens that go through the launcher.** An app opened from a notification, from Recents, or
   picked inside a system chooser (such as the wallpaper chooser) opens right away.
+- **Search learns only from opens through the launcher.** An app opened from a notification or from Recents does
+  not move up in search.
 - **Shortcuts that Nova pinned belong to Nova.** After an import they appear but do not open, so add them again from
-  their app.
+  the app's menu or from the app itself.
 - **Pinned shortcuts do not survive a reinstall.** They belong to the install that pinned them, and backups do not
-  carry their icons. After restoring, add them again from their app.
+  carry their icons. After restoring, add them again from the app's menu or from the app itself.
 - **Some widgets start as placeholders.** This happens after a Nova import, and after restoring a backup whose
   widgets no longer exist on the device. Tap each placeholder to bind it and run its setup.
 - **Widgets cannot be resized.** They keep the size they were added with (or imported with from Nova).
 - **There are no folders.** A Nova import skips Nova's folders, its private-space tab and Nova's own actions, such as
   "open drawer".
-- **No app shortcut menu.** Long-pressing an app does not list its shortcuts (such as "New message"). Shortcuts come
-  only from "Add to home screen" and from a Nova import.
+- **App menus list shortcuts only for the main profile.** A work profile app's menu lists none, and a shortcut in a
+  menu is added with its +, not dragged out as in Nova.
 - **No icon packs, and icons cannot be renamed.** A Nova import keeps the labels the icons had in Nova.
 - **Other apps can pin shortcuts, but not widgets.**
+- **Apps open with Android's own animation, not out of their icon.** From the December 2024 Android 15 update on,
+  only a home app with a system permission picks the open animation, and the Pixel launcher's morph from icon to
+  window and back needs one too.
 - **The screen does not rotate.** It stays in the phone's natural orientation.
 - **The "search with" providers and the Lens button are fixed.** The Lens button needs the Google Lens app.
 - **Swipe down depends on a non-public Android API.** There is no public way to open the notification shade, so a
@@ -234,10 +260,10 @@ Kotlin sources are in `src/main/kotlin/io/github/gastoncampana/launcher/`, and t
 | `src/main/AndroidManifest.xml` | Permissions (INTERNET removed), the home activity and the pinned-shortcut activity. |
 | `src/main/res/values/`, `src/main/res/values-es/` | UI strings: English (the default) and Spanish. |
 | `src/main/res/resources.properties` | Names English as the default locale for the generated per-app language list. |
-| `Model.kt` | Pure logic: the layout model, grid placement, JSON persistence, app lookup, search and the calculator. |
+| `Model.kt` | Pure logic: the layout model, grid placement, JSON persistence, app lookup, search, the calculator and which shortcuts an app's menu lists. |
 | `Nova.kt` | A pure converter from a Nova backup's database rows and preferences to a layout. |
 | `NovaImport.kt` | Reads the `.novabackup` zip (`nova.db` and `nova.xml`). |
-| `Launcher.kt` | The home activity (app list, widget hosting, opening apps, poisons, backups, Nova import), the shared layout state and `PinActivity` for pinned shortcuts. |
+| `Launcher.kt` | The home activity (app list, app shortcuts, widget hosting, opening apps, poisons, use scores for search, backups, Nova import), the shared layout state and `PinActivity` for pinned shortcuts. |
 | `Ui.kt` | The Compose UI: desktop, dock, search bar, drawer, menus and dialogs, the pause screen and the settings. |
 | `ModelTest.kt`, `NovaTest.kt` | Unit tests for the model and the Nova converter. |
 | `scripts/install.sh` | Builds and installs an update over adb without losing the default home choice. |

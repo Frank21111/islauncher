@@ -4,6 +4,7 @@ import io.github.gastoncampana.launcher.Target.App
 import io.github.gastoncampana.launcher.Target.Shortcut
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ModelTest {
@@ -18,6 +19,40 @@ class ModelTest {
     fun searchIgnoresAccentsCaseAndBlankQuery() {
         assertEquals(listOf("Cámara"), search(labels, " CAM ") { it })
         assertEquals(labels, search(labels, "  ") { it })
+    }
+
+    @Test
+    fun searchRankBreaksTiesOnlyWithinAMatchGroup() {
+        val rank = mapOf("Spotify" to 5.0, "Google Maps" to 9.0, "Cámara" to 1.0)
+        val apps = listOf("Signal") + labels
+        assertEquals(listOf("Spotify", "Signal", "Google Maps", "Mapas viejos"), search(apps, "s", { rank[it] ?: 0.0 }) { it })
+        // A heavy use never lifts a word-start match over a prefix one.
+        assertEquals(listOf("Mapas viejos", "Google Maps", "Cámara"), search(labels, "ma", { rank[it] ?: 0.0 }) { it })
+        assertEquals(apps, search(apps, "", { rank[it] ?: 0.0 }) { it }) // no query: input order
+    }
+
+    @Test
+    fun useDecaysByDayAndIgnoresAClockSetBack() {
+        assertEquals(9.0, decayed(10.0, 100.0, 101.0), 1e-9)
+        assertEquals(10.0, decayed(10.0, 100.0, 100.0), 0.0)
+        assertEquals(10.0, decayed(10.0, 100.0, 90.0), 0.0)
+        // Five opens a month ago weigh less than one yesterday; a few hours sooner wins between single opens.
+        assertTrue(decayed(5.0, 0.0, 30.0) < decayed(1.0, 29.0, 30.0))
+        assertTrue(decayed(1.0, 29.9, 30.0) > decayed(1.0, 29.8, 30.0))
+    }
+
+    @Test
+    fun menuShortcutsListManifestOnesFirstAndKeepTwoDynamicOnes() {
+        // "m" from the manifest, "d" dynamic; the digit is the rank.
+        fun pick(vararg ids: String) = menuShortcuts(ids.toList(), { it[0] == 'm' }, { it.drop(1).toInt() })
+        assertEquals(listOf("m0", "m1", "d0", "d1"), pick("d1", "m1", "d0", "m0"))
+        assertEquals(listOf("m0", "m1", "m2", "m3"), pick("m4", "m3", "m2", "m1", "m0"))
+        assertEquals(listOf("d0", "d1", "d2", "d3"), pick("d4", "d3", "d2", "d1", "d0"))
+        assertEquals(listOf("m0", "d0", "d1", "d2"), pick("d3", "d2", "d1", "d0", "m0"))
+        // A full set of manifest ones gives up its last places to two dynamic ones, or the one there is.
+        assertEquals(listOf("m0", "m1", "d0", "d1"), pick("m0", "m1", "m2", "m3", "m4", "d2", "d1", "d0"))
+        assertEquals(listOf("m0", "m1", "m2", "d0"), pick("m3", "m2", "m1", "m0", "d0"))
+        assertEquals(emptyList<String>(), pick())
     }
 
     @Test
@@ -67,6 +102,7 @@ class ModelTest {
             drawerColumns = 4,
             drawerRows = 8,
             haptics = false,
+            instead = App("k/k.Kindle#0"),
         )
         assertEquals(layout, parseLayout(layout.toJson()))
     }
@@ -74,6 +110,12 @@ class ModelTest {
     @Test
     fun hapticsStayOnForLayoutsSavedBeforeTheSetting() {
         assertEquals(true, parseLayout("""{"dock":[[]],"desktop":[[]],"tabs":[]}""").haptics)
+    }
+
+    @Test
+    fun theAppInsteadOfAPoisonIsUnsetForLayoutsSavedBeforeTheSetting() {
+        assertNull(parseLayout("""{"dock":[[]],"desktop":[[]],"tabs":[]}""").instead)
+        assertNull(parseLayout(Layout().toJson()).instead) // null leaves the key out
     }
 
     @Test

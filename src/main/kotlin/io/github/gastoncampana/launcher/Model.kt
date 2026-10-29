@@ -65,6 +65,8 @@ data class Layout(
     val drawerRows: Int = 6,
     /** Light vibrations on long presses, drops, swipes and settings; the system's touch feedback setting still rules. */
     val haptics: Boolean = true,
+    /** A healthy app a poison's pause screen offers to open instead. */
+    val instead: Target? = null,
 )
 
 fun <T> List<T>.replaced(index: Int, f: (T) -> T): List<T> = mapIndexed { i, x -> if (i == index) f(x) else x }
@@ -81,7 +83,8 @@ fun <T> finder(apps: List<T>, id: (T) -> AppId): (AppId) -> T? {
     return { byId[it] ?: byPackage[packageKey(it)] }
 }
 
-private fun packageKey(id: AppId) = id.substringBefore('/') + "#" + id.substringAfterLast('#')
+/** "<package>#<user serial>": an app under any of its activities. */
+fun packageKey(id: AppId) = id.substringBefore('/') + "#" + id.substringAfterLast('#')
 
 /** The apps [tab] lists, in [apps] order. */
 fun <T> tabApps(tab: Tab, tabs: List<Tab>, apps: List<T>, find: (AppId) -> T?, hidden: Set<AppId> = emptySet()): List<T> {
@@ -211,6 +214,7 @@ fun Layout.toJson(): String = JSONObject()
     .put("drawerColumns", drawerColumns)
     .put("drawerRows", drawerRows)
     .put("haptics", haptics)
+    .put("instead", instead?.toJson())
     .toString()
 
 fun parseLayout(json: String): Layout {
@@ -243,6 +247,7 @@ fun parseLayout(json: String): Layout {
         drawerColumns = size("drawerColumns", 5),
         drawerRows = size("drawerRows", 6),
         haptics = root.optBoolean("haptics", true),
+        instead = root.target("instead"),
     )
 }
 
@@ -279,8 +284,11 @@ private val MARKS = Regex("\\p{Mn}+")
 /** Lowercase without accents, so "camara" finds "Cámara". */
 fun fold(s: String): String = Normalizer.normalize(s, Normalizer.Form.NFD).replace(MARKS, "").lowercase()
 
-/** Prefix matches first, then word-start matches, then substrings; input order is kept within each group. */
-fun <T> search(items: List<T>, query: String, label: (T) -> String): List<T> {
+/**
+ * Prefix matches first, then word-start matches, then substrings; within each group the highest [rank] comes first,
+ * and input order breaks the remaining ties.
+ */
+fun <T> search(items: List<T>, query: String, rank: (T) -> Double = { 0.0 }, label: (T) -> String): List<T> {
     val q = fold(query.trim())
     if (q.isEmpty()) return items
     return items.mapNotNull { item ->
@@ -290,9 +298,28 @@ fun <T> search(items: List<T>, query: String, label: (T) -> String): List<T> {
             l.split(' ', '-', '.', '_').any { it.startsWith(q) } -> 1
             q in l -> 2
             else -> null
-        }?.let { it to item }
-    }.sortedBy { it.first }.map { it.second }
+        }?.let { Triple(it, -rank(item), item) }
+    }.sortedWith(compareBy({ it.first }, { it.second })).map { it.third }
 }
+
+/** Most shortcuts an app's menu lists, as in Launcher3. */
+const val MENU_SHORTCUTS = 4
+
+/**
+ * The shortcuts an app's menu lists, as Launcher3 picks them: those from its manifest first, each kind by [rank], at
+ * most [MENU_SHORTCUTS]; up to two dynamic ones (recent chats) take the place of the last manifest ones.
+ */
+fun <T> menuShortcuts(all: List<T>, manifest: (T) -> Boolean, rank: (T) -> Int): List<T> {
+    val (fixed, dynamic) = all.sortedBy(rank).partition(manifest)
+    val shown = minOf(dynamic.size, maxOf(2, MENU_SHORTCUTS - fixed.size))
+    return fixed.take(MENU_SHORTCUTS - shown) + dynamic.take(shown)
+}
+
+/** Weight an app's use keeps per day: each open adds 1, and a week later it counts about half. */
+const val USE_DECAY = 0.9
+
+/** A use [score] last updated on day [since] as of day [now] (days since 1970, fractional); a clock set back keeps it. */
+fun decayed(score: Double, since: Double, now: Double): Double = score * USE_DECAY.pow((now - since).coerceAtLeast(0.0))
 
 /**
  * The value of a search query that is a sum, like "125*3" or "1,5 + 2" (null for anything else, a lone number

@@ -19,8 +19,10 @@ import android.widget.RemoteViews
 import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -42,6 +44,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.IndicationNodeFactory
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -49,6 +52,8 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -99,7 +104,9 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -138,6 +145,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
@@ -153,6 +161,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.node.DelegatableNode
+import androidx.compose.ui.node.DrawModifierNode
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -212,9 +222,11 @@ private val TAB_GAP = 11.dp // above the tabs
 private val GRID_PADDING = PaddingValues(start = 8.dp, end = 8.dp, top = 25.dp, bottom = 16.dp)
 private val LABEL_SPACE = 28.dp // a label under an icon, with its gap
 private val PREVIEW_HEIGHT = 160.dp // a widget's preview in the widget picker, at most
+private val SHORTCUT_ICON = 32.dp // an app shortcut's, in its menu
 // Widget previews load and inflate here, two at a time: a fling neither stutters nor floods the IO pool.
 private val PREVIEW_LOADER = Dispatchers.IO.limitedParallelism(2)
 private const val ICON_SHARE = 0.62f // of a cell's width, at most: Nova's icon on a 5-column grid
+private const val PRESSED_SCALE = 0.92f // an icon while the finger is on it
 private const val DOCK_LOOPS = 1000 // virtual dock pages, so it scrolls around in both directions
 private const val EDGE_HOLD_MS = 600L // holding a dragged item at a side this long flips the page
 private const val PAUSE_SECONDS = 10 // before a poison app opens
@@ -262,7 +274,7 @@ fun LauncherScreen(l: Launcher) {
                 is Popup.PickApp -> AppPicker(l, p)
                 is Popup.Rename -> NameDialog(l, p)
                 is Popup.Widgets -> WidgetPicker(l, p.page)
-                is Popup.Pause -> PauseScreen(l, p)
+                is Popup.Pause -> key(p) { PauseScreen(l, p) } // keyed: a poison opened instead gets its own countdown
                 is Popup.Confirm -> ConfirmDialog(l, p)
                 is Popup.Checklist -> AppChecklist(l, p)
                 is Popup.Grid -> GridDialog(l, p)
@@ -356,8 +368,8 @@ private fun Home(l: Launcher, mover: Mover) {
 }
 
 /**
- * An item being dragged, from desktop [page] or (null) from the drawer. Home draws [layer], the item's last frame,
- * under the finger.
+ * An item being dragged, from desktop [page] or (null) from the drawer. Home draws [layer], which the item keeps
+ * recording but no longer draws in its place, under the finger.
  */
 private class Drag(val page: Int?, val item: Item, val layer: GraphicsLayer, val size: IntSize, val grab: Offset) {
     var pointer by mutableStateOf(Offset.Zero) // root coordinates
@@ -479,9 +491,9 @@ private fun Movable(
         modifier
             .onGloballyPositioned { coords = it }
             .drawWithContent {
-                if (mover.drag?.item == item) return@drawWithContent // lifted: Home draws it under the finger
+                // Recorded while lifted too, so the copy under the finger springs back from PressScale's pressed size.
                 layer.record { this@drawWithContent.drawContent() }
-                drawLayer(layer)
+                if (mover.drag?.item != item) drawLayer(layer) // lifted: Home draws it under the finger
             }
             .longPressDrag(
                 item,
@@ -519,7 +531,7 @@ private fun DesktopMenu(l: Launcher, menu: Popup.DesktopMenu) {
 private fun DesktopIcon(l: Launcher, item: Item.Icon, icon: Dp) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
-            Modifier.clickable(interactionSource = null, indication = null) { l.open(item.target) },
+            Modifier.clickable(interactionSource = null, indication = PressScale) { l.open(item.target) },
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             TargetIcon(l, item.target, icon)
@@ -560,8 +572,12 @@ private fun WidgetPlaceholder(l: Launcher, item: Item.Widget, onClick: () -> Uni
 
 @Composable
 private fun ItemMenu(l: Launcher, page: Int, item: Item) {
-    DropdownMenu(l.popup == Popup.ItemMenu(page, item), { l.popup = null }) {
-        val app = (item as? Item.Icon)?.let { l.appOf(it.target) }
+    val target = (item as? Item.Icon)?.target
+    val app = l.appOf(target)
+    val open = l.popup == Popup.ItemMenu(page, item)
+    val shortcuts = rememberShortcuts(l, app.takeIf { target is Target.App }, open) // a pinned shortcut's icon lists none
+    DropdownMenu(open && shortcuts != null, { l.popup = null }) {
+        if (app != null) AppShortcuts(l, app, shortcuts.orEmpty())
         if (app != null) MenuItem(l, stringResource(R.string.menu_app_info)) { l.showInfo(app) }
         if (item is Item.Widget && item.widgetId != 0) MenuItem(l, stringResource(R.string.widget_reconfigure)) { l.unbind(page, item) }
         MenuItem(l, stringResource(R.string.remove)) { l.remove(page, item) }
@@ -636,7 +652,7 @@ private fun DockSlot(l: Launcher, virtualPage: Int, slot: Int, icon: DockIcon, i
             }
             .combinedClickable(
                 interactionSource = null,
-                indication = null,
+                indication = PressScale,
                 hapticFeedbackEnabled = false, // its own would bypass the setting
                 onClick = { l.open(icon.tap) },
                 onLongClick = {
@@ -647,7 +663,11 @@ private fun DockSlot(l: Launcher, virtualPage: Int, slot: Int, icon: DockIcon, i
         contentAlignment = Alignment.Center,
     ) {
         icon.tap?.let { TargetIcon(l, it, iconSize) }
-        DropdownMenu(l.popup == Popup.DockMenu(virtualPage, slot), { l.popup = null }) {
+        val app = l.appOf(icon.tap)
+        val open = l.popup == Popup.DockMenu(virtualPage, slot)
+        val shortcuts = rememberShortcuts(l, app.takeIf { icon.tap is Target.App }, open)
+        DropdownMenu(open && shortcuts != null, { l.popup = null }) {
+            if (app != null) AppShortcuts(l, app, shortcuts.orEmpty())
             fun pick(title: String, set: (DockIcon, Target?) -> DockIcon) {
                 l.popup = Popup.PickApp(title) { app -> l.updateDock(page, slot) { set(it, app?.let { a -> Target.App(a.id) }) } }
             }
@@ -660,7 +680,7 @@ private fun DockSlot(l: Launcher, virtualPage: Int, slot: Int, icon: DockIcon, i
             MenuItem(l, stringResource(R.string.dock_swipe_down, l.labelOf(icon.down))) {
                 pick(l.getString(R.string.dock_pick_swipe_down)) { d, t -> d.copy(down = t) }
             }
-            l.appOf(icon.tap)?.let { app -> MenuItem(l, stringResource(R.string.menu_app_info)) { l.showInfo(app) } }
+            app?.let { MenuItem(l, stringResource(R.string.menu_app_info)) { l.showInfo(it) } }
         }
     }
 }
@@ -764,7 +784,7 @@ private fun Drawer(l: Launcher, mover: Mover) {
     val tabs = l.layout.tabs
     val pager = rememberPagerState { tabs.size } // one page per tab, swiped sideways as in Nova
     val searching = query.isNotBlank()
-    val results = if (searching) search(l.apps, query) { it.label } else emptyList()
+    val results = if (searching) search(l.apps, query, l::usage) { it.label } else emptyList() // the most used first among equals
     fun appsOf(tab: Int) = tabs.getOrNull(tab)?.let { tabApps(it, tabs, l.apps, l.find, l.layout.hidden) } ?: l.apps
     val haptic = rememberHaptic(l)
     // A pull keeps scrolling past the point that closed the drawer: only that point ticks.
@@ -1001,14 +1021,17 @@ private fun DrawerApp(l: Launcher, mover: Mover, app: App, height: Dp, icon: Dp)
             Modifier
                 .fillMaxWidth()
                 .height(height)
-                .clickable(interactionSource = null, indication = null) { l.start(app) },
+                .clickable(interactionSource = null, indication = PressScale) { l.start(app) },
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
             AppImage(app, icon)
             Text(app.label, Modifier.padding(top = 6.dp, start = 2.dp, end = 2.dp), style = LABEL, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        DropdownMenu(l.popup == Popup.AppMenu(app.id), { l.popup = null }) {
+        val open = l.popup == Popup.AppMenu(app.id)
+        val shortcuts = rememberShortcuts(l, app, open)
+        DropdownMenu(open && shortcuts != null, { l.popup = null }) {
+            AppShortcuts(l, app, shortcuts.orEmpty())
             MenuItem(l, stringResource(R.string.add_to_home_screen)) { l.addToDesktop(Target.App(app.id), app.label) }
             // Tab toggles leave the menu open so several can be set at once.
             l.layout.tabs.forEachIndexed { i, tab ->
@@ -1093,11 +1116,11 @@ private fun SearchProviders(l: Launcher, query: String) {
 // --- Shared pieces ---
 
 @Composable
-private fun TargetIcon(l: Launcher, target: Target, size: Dp) {
+private fun TargetIcon(l: Launcher, target: Target, size: Dp, modifier: Modifier = Modifier) {
     val app = l.appOf(target)
     when (target) {
-        is Target.App -> AppImage(app, size)
-        is Target.Shortcut -> Box(Modifier.size(size)) {
+        is Target.App -> AppImage(app, size, modifier)
+        is Target.Shortcut -> Box(modifier.size(size)) {
             val icon = remember(target) { l.shortcutIcon(target) }
             if (icon != null) Image(icon, target.label, Modifier.fillMaxSize()) else AppImage(app, size)
             // The publishing app's badge, as Nova draws it, unless the icon has one already.
@@ -1108,13 +1131,84 @@ private fun TargetIcon(l: Launcher, target: Target, size: Dp) {
 }
 
 @Composable
-private fun AppImage(app: App?, size: Dp = ICON) {
+private fun AppImage(app: App?, size: Dp, modifier: Modifier = Modifier) {
     if (app == null) {
-        Box(Modifier.size(size).clip(CircleShape).background(Color.White.copy(alpha = 0.15f)))
+        Box(modifier.size(size).clip(CircleShape).background(Color.White.copy(alpha = 0.15f)))
     } else {
         // Apps paused by Digital Wellbeing are greyed out, as in Nova.
-        Image(app.icon, app.label, Modifier.size(size), alpha = if (app.suspended) 0.6f else 1f, colorFilter = if (app.suspended) GREY else null)
+        Image(app.icon, app.label, modifier.size(size), alpha = if (app.suspended) 0.6f else 1f, colorFilter = if (app.suspended) GREY else null)
     }
+}
+
+/**
+ * The pressed feel of an icon: it shrinks a little while the finger is on it and springs back. An indication, so the
+ * icon's own clickable tracks the touch: a long press, a drag, paging or scrolling takes it over, and that cancels.
+ */
+private data object PressScale : IndicationNodeFactory {
+    override fun create(interactionSource: InteractionSource): DelegatableNode = PressScaleNode(interactionSource)
+}
+
+private class PressScaleNode(private val source: InteractionSource) : Modifier.Node(), DrawModifierNode {
+    private val factor = Animatable(1f)
+
+    // One after the other, not the latest only: a quick tap (a press and its release at once) still dips.
+    override fun onAttach() {
+        coroutineScope.launch {
+            source.interactions.collect {
+                when (it) {
+                    is PressInteraction.Press -> factor.animateTo(PRESSED_SCALE, spring())
+                    is PressInteraction.Release, is PressInteraction.Cancel -> factor.animateTo(1f, spring())
+                }
+            }
+        }
+    }
+
+    // Drawn smaller, not laid out smaller: the touch area stays put.
+    override fun ContentDrawScope.draw() = scale(factor.value) { this@draw.drawContent() }
+}
+
+/**
+ * The shortcuts [app]'s menu lists, read off the main thread each time the menu is [open]. Null until the first read is
+ * in, so the menu waits for them (tens of ms) instead of opening and then pushing its rows down under the finger; a
+ * reopen shows the last ones until the new read. None for no [app] (a widget, a pinned shortcut's icon).
+ */
+@Composable
+private fun rememberShortcuts(l: Launcher, app: App?, open: Boolean): List<AppShortcut>? {
+    val iconPx = with(LocalDensity.current) { SHORTCUT_ICON.roundToPx() }
+    var shortcuts by remember(app?.id) { mutableStateOf(if (app == null) emptyList<AppShortcut>() else null) }
+    LaunchedEffect(app, open) {
+        if (open && app != null) shortcuts = withContext(Dispatchers.IO) { l.shortcutsOf(app, iconPx) }
+    }
+    return shortcuts
+}
+
+/**
+ * [app]'s own [shortcuts] ("New message", recent chats) at the top of its menu, as in Nova: a tap opens one, as a
+ * desktop shortcut opens, and + pins it to the desktop.
+ */
+@Composable
+private fun AppShortcuts(l: Launcher, app: App, shortcuts: List<AppShortcut>) {
+    if (shortcuts.isEmpty()) return
+    for (s in shortcuts) key(s.target.id) {
+        // The long label where it fits, as Launcher3 shows it (Android means it for menus); a pinned icon gets the short one.
+        var short by remember { mutableStateOf(s.info.longLabel.isNullOrBlank()) }
+        val label = if (short) s.target.label else s.info.longLabel.toString()
+        DropdownMenuItem(
+            text = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, onTextLayout = { if (it.hasVisualOverflow) short = true }) },
+            onClick = {
+                l.popup = null
+                l.open(s.target)
+            },
+            leadingIcon = { Image(s.icon ?: app.icon, null, Modifier.size(SHORTCUT_ICON)) },
+            trailingIcon = {
+                IconAction(MORE, stringResource(R.string.shortcut_add_to_home, label), tint = ACCENT) {
+                    l.popup = null
+                    l.pin(s.info)
+                }
+            },
+        )
+    }
+    HorizontalDivider()
 }
 
 /** A menu entry that closes the menu, then acts (the action may open another popup). */
@@ -1405,6 +1499,22 @@ private fun PauseScreen(l: Launcher, p: Popup.Pause) {
             Spacer(Modifier.height(48.dp))
             Button({ l.popup = null }, colors = ButtonDefaults.buttonColors(containerColor = ACCENT, contentColor = Color.Black)) {
                 Text(stringResource(R.string.poison_go_back))
+            }
+            // The healthy app picked in Ajustes, if installed and not this one; through open, so a poison there pauses too.
+            val instead = l.layout.instead?.takeIf { t -> l.appOf(t)?.let { l.packageOf(it) != l.packageOf(p.app) } == true }
+            if (instead != null) {
+                OutlinedButton(
+                    {
+                        l.popup = null
+                        l.open(instead)
+                    },
+                    Modifier.padding(top = 12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                    contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+                ) {
+                    TargetIcon(l, instead, 24.dp, Modifier.clearAndSetSemantics {}) // the text names it
+                    Text(stringResource(R.string.poison_open_instead, l.labelOf(instead)), Modifier.padding(start = 8.dp))
+                }
             }
             TextButton(
                 {
@@ -1726,6 +1836,15 @@ private fun DrawerSettings(l: Launcher, layout: Layout) {
         if (poisons == 0) stringResource(R.string.poison_summary_none) else pluralStringResource(R.plurals.count_apps, poisons, poisons),
         { l.popup = Popup.Checklist(l.getString(R.string.poisons), { it.poisons }, { layout, ids -> layout.copy(poisons = ids) }) },
     )
+    SettingRow(
+        stringResource(R.string.poison_instead),
+        layout.instead?.let { l.labelOf(it).replaceFirstChar { c -> c.uppercase() } } ?: stringResource(R.string.poison_instead_none),
+        {
+            l.popup = Popup.PickApp(l.getString(R.string.poison_pick_instead)) { app ->
+                l.update { it.copy(instead = app?.let { a -> Target.App(a.id) }) }
+            }
+        },
+    ) { layout.instead?.let { Box(Modifier.padding(end = 8.dp)) { TargetIcon(l, it, 36.dp) } } }
 }
 
 /** Renames drawer tab [i]; a tab of chosen apps can also leave the others or go. */

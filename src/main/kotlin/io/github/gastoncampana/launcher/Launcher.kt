@@ -18,7 +18,6 @@ import android.content.pm.ShortcutInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
-import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -70,6 +69,14 @@ private const val MAX_BACKUP_BYTES = 1 shl 20 // a layout is a few KB; anything 
 
 class App(val id: AppId, val label: String, val icon: ImageBitmap, val info: LauncherActivityInfo, val suspended: Boolean)
 
+/** One of an app's own shortcuts, as its menu lists it; [icon] is null when the app gives it none. */
+class AppShortcut(val info: ShortcutInfo, val icon: ImageBitmap?) {
+    val target = Target.Shortcut(info.`package`, info.id, info.label)
+}
+
+/** What a shortcut shows: its short label, else its long one. */
+val ShortcutInfo.label get() = (shortLabel ?: longLabel ?: "").toString()
+
 /** The saved layout, shared by the home screen and [PinActivity]. */
 object Layouts {
     private lateinit var prefs: SharedPreferences
@@ -109,6 +116,36 @@ fun Context.shortcutIconFile(t: Target.Shortcut) =
     File(filesDir, "shortcut-" + "${t.pkg}-${t.id}".replace(Regex("[^A-Za-z0-9._-]"), "_") + ".png")
 
 fun Context.toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
+
+/**
+ * Puts shortcut [info] on the main page, or the first page with room, once [pin] has pinned it (false: it was not, and a toast says so),
+ * and keeps its icon. Used by [PinActivity] and by app menus. This runs in the home screen's process: an uncaught throw
+ * would take it down too.
+ */
+fun Context.addShortcut(info: ShortcutInfo, pin: () -> Boolean) {
+    Layouts.init(this)
+    val layout = Layouts.current
+    val page = (listOf(layout.defaultPage) + layout.desktop.indices).firstOrNull { layout.freeCell(it, 1f, 1f) != null }
+        ?: return toast(getString(R.string.pin_no_room))
+    val label = info.label
+    val pinned = try {
+        pin()
+    } catch (e: RuntimeException) { // answered elsewhere, its sender or app is gone, or no longer the home app
+        Log.w(TAG, "Pin request failed", e)
+        false
+    }
+    if (!pinned) return toast(getString(R.string.pin_add_failed, label))
+    val target = Target.Shortcut(info.`package`, info.id, label)
+    try {
+        val icon = getSystemService(LauncherApps::class.java).getShortcutIconDrawable(info, resources.displayMetrics.densityDpi)
+        val size = (56 * resources.displayMetrics.density).toInt()
+        icon?.let { shortcutIconFile(target).outputStream().use { out -> it.toBitmap(size, size).compress(Bitmap.CompressFormat.PNG, 100, out) } }
+    } catch (e: Exception) { // the app's icon stands in
+        Log.w(TAG, "Cannot save the icon of $label", e)
+    }
+    Layouts.update { l -> l.copy(desktop = l.desktop.replaced(page) { it + Item.Icon(target, label, l.freeCell(page, 1f, 1f)!!) }) }
+    toast(getString(R.string.pin_added))
+}
 
 class Launcher : ComponentActivity() {
     private val launcherApps by lazy { getSystemService(LauncherApps::class.java) }
@@ -171,6 +208,10 @@ class Launcher : ComponentActivity() {
             host.appWidgetIds.filter { it !in used }.forEach(host::deleteAppWidgetId)
         }
         reload()
+        uses = useScores.all.mapNotNull { (key, value) ->
+            val (score, since) = value.toString().split(' ').mapNotNull(String::toDoubleOrNull).takeIf { it.size == 2 } ?: return@mapNotNull null
+            key to (score to since)
+        }.toMap()
         backupFolder = backups.getString("folder", null)?.toUri()
         setContent { LauncherScreen(this) }
     }
@@ -279,32 +320,61 @@ class Launcher : ComponentActivity() {
 
     private fun startShortcut(target: Target.Shortcut) = try {
         launcherApps.startShortcut(target.pkg, target.id, null, null, Process.myUserHandle())
+        true
     } catch (e: RuntimeException) { // not the default home app, shortcut removed, or user locked
         Log.w(TAG, "Cannot start shortcut ${target.pkg}/${target.id}", e)
         toast(
             if (!launcherApps.hasShortcutHostPermission()) getString(R.string.shortcut_needs_home)
             else getString(R.string.shortcut_open_failed, labelOf(target)),
         )
+        false
     }
 
     fun start(app: App) = pauseIfPoison(app) {
         orToast(app.label) { launcherApps.startMainActivity(app.info.componentName, app.info.user, null, null) }
     }
 
+
     // By package: an app that switches launcher aliases (Mercado Pago) stays poison under either activity.
     fun isPoison(app: App) = layout.poisons.any { find(it)?.let(::packageOf) == packageOf(app) }
 
-    private fun packageOf(app: App) = app.info.componentName.packageName to app.info.user
+    fun packageOf(app: App) = app.info.componentName.packageName to app.info.user
 
-    /** Opens a poison app (or one of its shortcuts) only through the pause screen. */
-    private fun pauseIfPoison(app: App?, open: () -> Unit) {
-        if (app != null && isPoison(app)) popup = Popup.Pause(app, open) else open()
+    /** Opens a poison app (or one of its shortcuts) only through the pause screen; [open] says whether it started. */
+    private fun pauseIfPoison(app: App?, open: () -> Boolean) {
+        if (app != null && isPoison(app)) {
+            popup = Popup.Pause(app) { open() }
+            return
+        }
+        if (open()) app?.let(::countUse) // the only place uses are counted, so a poison or a failed open never is
+    }
+
+    // How much each app is used, as "<package>#<user>" to "<score> <day>" (see [decayed]), so search can put it first
+    // among equally good matches. Not in the layout, so backups leave it out; faded entries are dropped on the next write.
+    private val useScores by lazy { getSharedPreferences("usage", MODE_PRIVATE) }
+    // Not snapshot state: results shown must not reorder under the app opening from them. The next query reads it.
+    private var uses = emptyMap<String, Pair<Double, Double>>()
+
+    private fun now() = System.currentTimeMillis() / 86_400_000.0 // days since 1970
+
+    /** The search rank of [app]: its decayed opens, none for a poison (it may have been used before it became one). */
+    fun usage(app: App): Double =
+        if (isPoison(app)) 0.0 else uses[packageKey(app.id)]?.let { (score, since) -> decayed(score, since, now()) } ?: 0.0
+
+    private fun countUse(app: App) {
+        val now = now()
+        val next = (uses + (packageKey(app.id) to (usage(app) + 1 to now))).filterValues { (score, since) -> decayed(score, since, now) >= 0.01 }
+        uses = next
+        useScores.edit {
+            clear()
+            next.forEach { (key, use) -> putString(key, "${use.first} ${use.second}") }
+        }
     }
 
     // Opens of each poison app today, as "<date>|<package>#<user>" counts; older days are dropped on the next write.
     private val opens by lazy { getSharedPreferences("opens", MODE_PRIVATE) }
 
-    private fun opensKey(app: App) = "${LocalDate.now()}|${app.id.substringBefore('/')}#${app.id.substringAfterLast('#')}"
+    private fun opensKey(app: App) = "${LocalDate.now()}|${packageKey(app.id)}"
 
     fun opensToday(app: App) = opens.getInt(opensKey(app), 0)
 
@@ -316,7 +386,9 @@ class Launcher : ComponentActivity() {
         }
     }
 
-    fun showInfo(app: App) = orToast(app.label) { launcherApps.startAppDetailsActivity(app.info.componentName, app.info.user, null, null) }
+    fun showInfo(app: App) {
+        orToast(app.label) { launcherApps.startAppDetailsActivity(app.info.componentName, app.info.user, null, null) }
+    }
 
     /** Opens another app's screen (search providers, assistant, Lens, calendar), behind the pause if that app is poison. */
     fun startIntent(intent: Intent, what: String) {
@@ -325,17 +397,54 @@ class Launcher : ComponentActivity() {
         pauseIfPoison(app) { orToast(what) { startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
     }
 
-    private inline fun orToast(what: String, action: () -> Unit) {
-        try {
-            action()
-        } catch (e: RuntimeException) { // disabled, uninstalled, quiet-mode profile or no app for the intent
-            Log.w(TAG, "Cannot open $what", e)
-            toast(getString(R.string.open_failed, what))
-        }
+    /** Runs [action], else toasts that [what] did not open; true if it ran. */
+    private inline fun orToast(what: String, action: () -> Unit) = try {
+        action()
+        true
+    } catch (e: RuntimeException) { // disabled, uninstalled, quiet-mode profile or no app for the intent
+        Log.w(TAG, "Cannot open $what", e)
+        toast(getString(R.string.open_failed, what))
+        false
     }
 
     fun shortcutIcon(target: Target.Shortcut): ImageBitmap? =
         shortcutIconFile(target).takeIf { it.exists() }?.let { BitmapFactory.decodeFile(it.path)?.asImageBitmap() }
+
+    /**
+     * The shortcuts [app]'s menu lists ("New message", recent chats; see [menuShortcuts]), with icons [iconPx] square.
+     * None unless this is the default home app, and none for a work profile's app: [Target.Shortcut] keeps no user.
+     * Blocking: call it off the main thread.
+     */
+    fun shortcutsOf(app: App, iconPx: Int): List<AppShortcut> {
+        if (app.info.user != Process.myUserHandle()) return emptyList()
+        return try {
+            if (!launcherApps.hasShortcutHostPermission()) return emptyList()
+            val query = LauncherApps.ShortcutQuery()
+                .setPackage(app.info.componentName.packageName)
+                .setActivity(app.info.componentName)
+                .setQueryFlags(LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC or LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST)
+            menuShortcuts(launcherApps.getShortcuts(query, app.info.user).orEmpty(), { it.isDeclaredInManifest }, { it.rank }).map {
+                val icon = launcherApps.getShortcutIconDrawable(it, resources.displayMetrics.densityDpi)
+                AppShortcut(it, icon?.toBitmap(iconPx, iconPx)?.asImageBitmap())
+            }
+        } catch (e: RuntimeException) { // the user is locked, or the app is gone
+            Log.w(TAG, "Cannot read the shortcuts of ${app.label}", e)
+            emptyList()
+        }
+    }
+
+    /** Pins [shortcut], from an app's menu, to the desktop. */
+    fun pin(shortcut: ShortcutInfo) = addShortcut(shortcut) {
+        fun pinned(ids: List<String>?) = launcherApps.getShortcuts(
+            LauncherApps.ShortcutQuery().setPackage(shortcut.`package`).setShortcutIds(ids)
+                .setQueryFlags(LauncherApps.ShortcutQuery.FLAG_MATCH_PINNED or LauncherApps.ShortcutQuery.FLAG_GET_KEY_FIELDS_ONLY),
+            shortcut.userHandle,
+        ).orEmpty().map { it.id }
+        // pinShortcuts replaces the package's pinned list: the ones already pinned (a browser's web shortcuts) must stay.
+        launcherApps.pinShortcuts(shortcut.`package`, (pinned(null) + shortcut.id).distinct(), shortcut.userHandle)
+        // It skips an id the app dropped since its menu opened (chat apps reshuffle recent chats), without a word.
+        pinned(listOf(shortcut.id)).isNotEmpty()
+    }
 
     /** Browsers draw their own badge on the web shortcuts they pin (Chrome does). Hostless, so app links don't match. */
     fun isBrowser(pkg: String) = packageManager.resolveActivity(
@@ -626,7 +735,7 @@ class Launcher : ComponentActivity() {
 
     fun restoreBackup() = openBackup.launch(arrayOf("application/json", "application/octet-stream", "text/plain"))
 
-    // --- Nova import: a .novabackup replaces the layout; the venenos (which Nova lacks) and the vibration setting stay ---
+    // --- Nova import: a .novabackup replaces the layout; the venenos (which Nova lacks), the app offered instead and the vibration setting stay ---
 
     private val pickNova = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@registerForActivityResult
@@ -637,7 +746,7 @@ class Launcher : ComponentActivity() {
                 Log.w(TAG, "Nova import failed", e)
                 return@launch toast(getString(R.string.backup_nova_read_failed))
             }
-            replaceLayout(imported.restored(emptyMap()).copy(poisons = layout.poisons, haptics = layout.haptics))
+            replaceLayout(imported.restored(emptyMap()).copy(poisons = layout.poisons, haptics = layout.haptics, instead = layout.instead))
             toast(getString(R.string.backup_nova_imported))
         }
     }
@@ -657,44 +766,17 @@ class PinActivity : ComponentActivity() {
         val request = launcherApps.getPinItemRequest(intent)
         val info = request?.shortcutInfo
         if (request == null || info == null || !request.isValid) return finish()
-        val label = (info.shortLabel ?: info.longLabel ?: "").toString()
         val from = try {
             packageManager.getApplicationLabel(packageManager.getApplicationInfo(info.`package`, 0)).toString()
         } catch (e: PackageManager.NameNotFoundException) {
             info.`package`
         }
         setContent {
-            PinDialog(label, from, onCancel = ::finish) {
-                add(request, info, label)
+            PinDialog(info.label, from, onCancel = ::finish) {
+                addShortcut(info, request::accept)
                 finish()
             }
         }
     }
 
-    // This runs in the home screen's process: an uncaught throw would take it down too.
-    private fun add(request: LauncherApps.PinItemRequest, info: ShortcutInfo, label: String) {
-        Layouts.init(this)
-        val layout = Layouts.current
-        val page = (listOf(layout.defaultPage) + layout.desktop.indices).firstOrNull { layout.freeCell(it, 1f, 1f) != null }
-            ?: return toast(getString(R.string.pin_no_room))
-        try {
-            if (!request.accept()) return
-        } catch (e: RuntimeException) { // answered elsewhere, or the sender is gone
-            Log.w(TAG, "Pin request failed", e)
-            return toast(getString(R.string.pin_add_failed, label))
-        }
-        val target = Target.Shortcut(info.`package`, info.id, label)
-        try {
-            launcherApps.getShortcutIconDrawable(info, resources.displayMetrics.densityDpi)?.let { saveIcon(shortcutIconFile(target), it) }
-        } catch (e: Exception) { // the app's icon stands in
-            Log.w(TAG, "Cannot save the icon of $label", e)
-        }
-        Layouts.update { l -> l.copy(desktop = l.desktop.replaced(page) { it + Item.Icon(target, label, l.freeCell(page, 1f, 1f)!!) }) }
-        toast(getString(R.string.pin_added))
-    }
-
-    private fun saveIcon(file: File, icon: Drawable) {
-        val size = (56 * resources.displayMetrics.density).toInt()
-        file.outputStream().use { icon.toBitmap(size, size).compress(Bitmap.CompressFormat.PNG, 100, it) }
-    }
 }

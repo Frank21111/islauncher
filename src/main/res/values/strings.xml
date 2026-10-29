@@ -48,6 +48,7 @@
     <string name="target_not_installed">not installed</string>
     <string name="app_unavailable">The app is not installed or is disabled</string>
     <string name="shortcut_needs_home">Shortcuts work when Launcher is the home app</string>
+    <string name="shortcut_add_to_home">Add “%1$s” to home screen</string>
     <string name="shortcut_open_failed">Couldn\'t open “%1$s”. Add it again from its app</string>
 
     <!-- Home screen -->
@@ -97,6 +98,7 @@
     <string name="poison_go_back">No, go back</string>
     <string name="poison_open_in">Open in %1$d</string>
     <string name="poison_open_anyway">Open anyway</string>
+    <string name="poison_open_instead">Open %1$s instead</string>
 
     <!-- Settings -->
     <string name="settings_drawer">App drawer</string>
@@ -156,6 +158,9 @@
     <string name="drawer_hidden_apps">Hidden apps</string>
     <string name="drawer_hidden_apps_none">None; search still finds them</string>
     <string name="poison_summary_none">Apps that open after a pause</string>
+    <string name="poison_instead">Instead of a poison</string>
+    <string name="poison_instead_none">An app the pause offers you instead</string>
+    <string name="poison_pick_instead">Offer instead of a poison</string>
 
     <string name="dock_icons_per_page">Icons per page</string>
     <string name="dock_icons_per_page_summary">Extra ones are kept until there is room again</string>
@@ -178,7 +183,7 @@
     <string name="backup_chosen_folder">the chosen folder</string>
     <string name="backup_import_nova">Import from Nova</string>
     <string name="backup_import_nova_summary">From a .novabackup file</string>
-    <string name="backup_import_nova_text">Replaces the home screen, dock, tabs, hidden apps and grids; poisons stay. Widgets are set up again by tapping them.</string>
+    <string name="backup_import_nova_text">Replaces the home screen, dock, tabs, hidden apps and grids; poisons and the app the pause offers stay. Widgets are set up again by tapping them.</string>
     <string name="backup_saved">Backup saved</string>
     <string name="backup_save_failed">Couldn\'t save the backup</string>
     <string name="backup_restored">Backup restored</string>
