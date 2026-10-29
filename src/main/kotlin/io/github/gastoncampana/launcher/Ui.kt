@@ -1,11 +1,15 @@
 package io.github.gastoncampana.launcher
 
 import android.app.SearchManager
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.os.Bundle
+import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.SizeF
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -61,6 +65,9 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
@@ -76,6 +83,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -115,6 +123,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -133,9 +142,13 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.net.toUri
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import java.text.NumberFormat
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 // Sizes and colours measured on Nova screenshots (448 dp wide).
@@ -158,6 +171,8 @@ private val GREY = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation
 private const val DOCK_LOOPS = 1000 // virtual dock pages, so it scrolls around in both directions
 private const val DRAWER_COLUMNS = 5
 private const val EDGE_HOLD_MS = 600L // holding a dragged item at a side this long flips the page
+private const val PAUSE_SECONDS = 10 // before a poison app opens
+private const val PAUSE_STEP_SECONDS = 5 // added for each time it was opened today
 
 /** The one open menu or dialog; the activity clears it on home, back and when leaving. */
 sealed interface Popup {
@@ -169,19 +184,28 @@ sealed interface Popup {
     class PickApp(val title: String, val onPick: (App?) -> Unit) : Popup
     class Rename(val title: String, val initial: String, val onDone: (String) -> Unit) : Popup
     data class Widgets(val page: Int) : Popup
+    class Pause(val app: App, val open: () -> Unit) : Popup
+    data object Backup : Popup
 }
 
 @Composable
 fun LauncherScreen(l: Launcher) {
+    val mover = remember { Mover(l) }
     MaterialTheme(colorScheme = dynamicDarkColorScheme(LocalContext.current)) {
         Box(Modifier.fillMaxSize()) {
-            Home(l)
-            // Keyed on stops: a drawer closed while an app was open is gone on return, instead of fading out then.
-            key(l.stops) { AnimatedVisibility(l.drawerOpen, enter = slideInVertically { it / 4 } + fadeIn(), exit = fadeOut()) { Drawer(l) } }
+            Home(l, mover)
+            key(l.drawerResets) {
+                AnimatedVisibility(l.drawerOpen, enter = slideInVertically { it / 4 } + fadeIn(), exit = fadeOut()) {
+                    // While one of its apps is dragged to the home screen, the drawer stays (the gesture lives in it) but unseen.
+                    Box(Modifier.graphicsLayer { alpha = if (mover.drag?.page == null && mover.drag != null) 0f else 1f }) { Drawer(l, mover) }
+                }
+            }
             when (val p = l.popup) {
                 is Popup.PickApp -> AppPicker(l, p)
                 is Popup.Rename -> NameDialog(l, p)
                 is Popup.Widgets -> WidgetPicker(l, p.page)
+                is Popup.Pause -> PauseScreen(l, p)
+                Popup.Backup -> BackupDialog(l)
                 else -> Unit // menus render next to what they belong to
             }
         }
@@ -191,11 +215,11 @@ fun LauncherScreen(l: Launcher) {
 // --- Home: desktop pages, dock, search bar ---
 
 @Composable
-private fun Home(l: Launcher) {
+private fun Home(l: Launcher, mover: Mover) {
     val layout = l.layout
     val pages = layout.desktop.size
     val pager = key(pages, layout.defaultPage) { rememberPagerState(initialPage = layout.defaultPage) { pages } }
-    val mover = remember(pager) { Mover(l, pager) }
+    SideEffect { mover.pager = pager }
     val haptic = LocalHapticFeedback.current
     LaunchedEffect(l.homePresses) {
         if (l.homePresses == 0) return@LaunchedEffect
@@ -204,7 +228,7 @@ private fun Home(l: Launcher) {
     }
     // Holding a dragged item at a side of the desktop flips to the page there.
     val edge by remember(mover) { derivedStateOf { mover.edge() } }
-    LaunchedEffect(edge) {
+    LaunchedEffect(edge, pager) {
         while (edge != 0) {
             delay(EDGE_HOLD_MS)
             val next = pager.currentPage + edge
@@ -231,7 +255,7 @@ private fun Home(l: Launcher) {
                 beyondViewportPageCount = pages,
             ) { page -> DesktopPage(l, mover, page) }
             PageLine(pager)
-            Dock(l)
+            Dock(l, mover)
             SearchPill(l)
         }
         mover.drag?.let { d ->
@@ -241,15 +265,21 @@ private fun Home(l: Launcher) {
     }
 }
 
-/** A desktop item being dragged. Home draws [layer], the item's last frame, under the finger. */
-private class Drag(val page: Int, val item: Item, val layer: GraphicsLayer, val size: IntSize, val grab: Offset) {
+/**
+ * An item being dragged, from desktop [page] or (null) from the drawer. Home draws [layer], the item's last frame,
+ * under the finger.
+ */
+private class Drag(val page: Int?, val item: Item, val layer: GraphicsLayer, val size: IntSize, val grab: Offset) {
     var pointer by mutableStateOf(Offset.Zero) // root coordinates
 }
 
-/** Drags desktop items, and drops them on the nearest free spot of the page shown. */
-private class Mover(private val l: Launcher, private val pager: PagerState) {
+/** Drags items onto the desktop page shown (the nearest free spot) or into an empty dock slot. */
+private class Mover(private val l: Launcher) {
     var drag by mutableStateOf<Drag?>(null)
+    var pager: PagerState? = null // the desktop's, set by Home
     var bounds = Rect.Zero // the desktop pager, in root coordinates
+    var dock = Rect.Zero
+    var dockPage = { 0 } // the dock page shown, set by Dock
 
     /** -1 or 1 while the dragged item is held at that side of the desktop, else 0. */
     fun edge(): Int {
@@ -261,9 +291,29 @@ private class Mover(private val l: Launcher, private val pager: PagerState) {
     fun drop() {
         val d = drag ?: return
         drag = null
+        if (d.page == null) l.hideDrawer()
+        val app = (d.item as? Item.Icon)?.target as? Target.App
+        if (app != null && d.pointer in dock) return dropOnDock(d, app)
+        if (d.pointer !in bounds) return // released over the search bar or page line: cancelled
+        val page = pager?.currentPage ?: return
         val at = d.pointer - d.grab - bounds.topLeft
         val want = d.item.cell.copy(x = at.x / bounds.width * GRID, y = at.y / bounds.height * GRID)
-        l.update { it.moved(d.page, d.item, pager.currentPage, want) }
+        val before = l.layout
+        l.update { it.moved(d.page, d.item, page, want) }
+        if (l.layout === before) l.toast("No hay lugar en esta página")
+    }
+
+    // Only an empty slot: replacing a dock icon by accident would lose its swipes' setup with no undo.
+    private fun dropOnDock(d: Drag, app: Target.App) {
+        val page = dockPage()
+        val slot = ((d.pointer.x - dock.left) / dock.width * DOCK_SIZE).toInt().coerceIn(0, DOCK_SIZE - 1)
+        if (l.layout.dock[page][slot].tap != null) return l.toast("Ese lugar del dock está ocupado")
+        l.update { layout ->
+            layout.copy(
+                dock = layout.dock.replaced(page) { it.replaced(slot) { icon -> icon.copy(tap = app) } },
+                desktop = if (d.page == null) layout.desktop else layout.desktop.replaced(d.page) { it - d.item },
+            )
+        }
     }
 }
 
@@ -287,7 +337,8 @@ private fun DesktopPage(l: Launcher, mover: Mover, page: Int) {
         SideEffect { l.cellSize = cell }
         for (item in l.layout.desktop.getOrNull(page).orEmpty()) key(item) {
             val size = DpSize(cell.width * item.cell.w, cell.height * item.cell.h)
-            Movable(l, mover, page, item, Modifier.offset(cell.width * item.cell.x, cell.height * item.cell.y).size(size)) {
+            val at = Modifier.offset(cell.width * item.cell.x, cell.height * item.cell.y).size(size)
+            Movable(l, mover, page, item, { l.popup = Popup.ItemMenu(page, item) }, at) {
                 when (item) {
                     is Item.Icon -> DesktopIcon(l, item)
                     is Item.Widget -> DesktopWidget(l, page, item, size)
@@ -299,11 +350,23 @@ private fun DesktopPage(l: Launcher, mover: Mover, page: Int) {
     }
 }
 
-/** A desktop item that a long press lifts: the press opens its menu, and dragging closes the menu and moves it, as in Nova. */
+/**
+ * An item that a long press lifts, on desktop [page] or (null) in the drawer: the press opens its menu
+ * ([onLongPress]), and dragging closes the menu and moves it, as in Nova.
+ */
 @Composable
-private fun Movable(l: Launcher, mover: Mover, page: Int, item: Item, modifier: Modifier, content: @Composable BoxScope.() -> Unit) {
+private fun Movable(
+    l: Launcher,
+    mover: Mover,
+    page: Int?,
+    item: Item,
+    onLongPress: () -> Unit,
+    modifier: Modifier,
+    content: @Composable BoxScope.() -> Unit,
+) {
     val layer = rememberGraphicsLayer()
     val haptic = LocalHapticFeedback.current
+    val keyboard = LocalSoftwareKeyboardController.current // open when dragging from search results
     var coords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     Box(
         modifier
@@ -314,17 +377,19 @@ private fun Movable(l: Launcher, mover: Mover, page: Int, item: Item, modifier: 
                 drawLayer(layer)
             }
             .longPressDrag(
-                mover,
+                item,
                 onLongPress = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    l.popup = Popup.ItemMenu(page, item)
+                    onLongPress()
                 },
                 onDragStart = { grab ->
                     l.popup = null
+                    keyboard?.hide()
                     coords?.let { mover.drag = Drag(page, item, layer, it.size, grab) }
                 },
                 onDrag = { at -> coords?.let { mover.drag?.pointer = it.localToRoot(at) } },
                 onDrop = mover::drop,
+                onCancel = { if (mover.drag?.item == item) mover.drag = null },
             ),
         content = content,
     )
@@ -339,6 +404,7 @@ private fun DesktopMenu(l: Launcher, menu: Popup.DesktopMenu) {
                 l.startIntent(Intent.createChooser(Intent(Intent.ACTION_SET_WALLPAPER), null), "el selector de fondos")
             }
             MenuItem(l, "App de inicio") { l.startIntent(Intent(Settings.ACTION_HOME_SETTINGS), "los ajustes") }
+            MenuItem(l, "Copia del escritorio") { l.popup = Popup.Backup }
         }
     }
 }
@@ -418,10 +484,15 @@ private fun PageLine(pager: PagerState) {
 // --- Dock: pages that wrap around; each icon opens one app on tap and others on a swipe up or down ---
 
 @Composable
-private fun Dock(l: Launcher) {
+private fun Dock(l: Launcher, mover: Mover) {
     val pages = l.layout.dock.size
     val pager = key(pages) { rememberPagerState(initialPage = pages * DOCK_LOOPS / 2) { pages * DOCK_LOOPS } }
-    HorizontalPager(pager, Modifier.fillMaxWidth().height(DOCK_HEIGHT), beyondViewportPageCount = 1) { virtualPage ->
+    SideEffect { mover.dockPage = { pager.currentPage % pages } }
+    HorizontalPager(
+        pager,
+        Modifier.fillMaxWidth().height(DOCK_HEIGHT).onGloballyPositioned { mover.dock = it.boundsInRoot() },
+        beyondViewportPageCount = 1,
+    ) { virtualPage ->
         Row(Modifier.fillMaxSize()) {
             l.layout.dock[virtualPage % pages].forEachIndexed { slot, icon -> DockSlot(l, virtualPage, slot, icon, Modifier.weight(1f)) }
         }
@@ -564,7 +635,7 @@ private val PROVIDERS = listOf(
 )
 
 @Composable
-private fun Drawer(l: Launcher) {
+private fun Drawer(l: Launcher, mover: Mover) {
     var query by remember { mutableStateOf("") }
     val focus = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
@@ -606,7 +677,15 @@ private fun Drawer(l: Launcher) {
         if (searching) {
             val grid = rememberLazyGridState()
             Box(Modifier.weight(1f)) {
-                AppGrid(l, results, grid, pullToClose) {
+                val sum = calc(query)
+                AppGrid(
+                    l,
+                    mover,
+                    results,
+                    grid,
+                    pullToClose,
+                    header = { sum?.let { item(span = { GridItemSpan(maxLineSpan) }) { CalcResult(it) } } },
+                ) {
                     item(span = { GridItemSpan(maxLineSpan) }) { SearchProviders(l, query) }
                 }
                 FastScroller(grid, Modifier.align(Alignment.CenterEnd))
@@ -615,7 +694,7 @@ private fun Drawer(l: Launcher) {
             Tabs(l, pager.currentPage) { scope.launch { pager.animateScrollToPage(it) } }
             val grids = remember(tabs.size) { List(tabs.size) { LazyGridState() } }
             Box(Modifier.weight(1f)) {
-                HorizontalPager(pager, Modifier.fillMaxSize()) { page -> AppGrid(l, appsOf(page), grids[page], pullToClose) }
+                HorizontalPager(pager, Modifier.fillMaxSize()) { page -> AppGrid(l, mover, appsOf(page), grids[page], pullToClose) }
                 // One scroller over the pages, so it stays put while swiping between tabs.
                 grids.getOrNull(pager.currentPage)?.let { FastScroller(it, Modifier.align(Alignment.CenterEnd)) }
             }
@@ -631,16 +710,49 @@ private fun Drawer(l: Launcher) {
 }
 
 @Composable
-private fun AppGrid(l: Launcher, apps: List<App>, grid: LazyGridState, pullToClose: NestedScrollConnection, footer: LazyGridScope.() -> Unit = {}) =
+private fun AppGrid(
+    l: Launcher,
+    mover: Mover,
+    apps: List<App>,
+    grid: LazyGridState,
+    pullToClose: NestedScrollConnection,
+    header: LazyGridScope.() -> Unit = {},
+    footer: LazyGridScope.() -> Unit = {},
+) =
     LazyVerticalGrid(
         GridCells.Fixed(DRAWER_COLUMNS),
         Modifier.fillMaxSize().nestedScroll(pullToClose),
         grid,
         contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 25.dp, bottom = 16.dp),
     ) {
-        items(apps, key = { it.id }) { app -> DrawerApp(l, app) }
+        header()
+        items(apps, key = { it.id }) { app -> DrawerApp(l, mover, app) }
         footer()
     }
+
+/** The result of a search that is a sum; a tap copies it. */
+@Composable
+private fun CalcResult(value: Double) {
+    val context = LocalContext.current
+    val text = remember(value) {
+        // Scientific notation where ten decimals would round to 0 or the digits run off the screen.
+        if (value != 0.0 && abs(value) < 1e-6 || abs(value) >= 1e15) "%.6g".format(value)
+        else NumberFormat.getNumberInstance().apply { maximumFractionDigits = 10 }.format(value)
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(TAB_OFF)
+            .clickable { context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Resultado", text)) }
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("= $text", Modifier.weight(1f), color = Color.White, fontSize = 28.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text("Copiar", color = TAB_OFF_TEXT, fontSize = 14.sp)
+    }
+}
 
 @Composable
 private fun SearchField(query: String, onChange: (String) -> Unit, focus: FocusRequester, onGo: () -> Unit) {
@@ -724,20 +836,16 @@ private fun Bubble(text: String, selected: Boolean, modifier: Modifier) {
 }
 
 @Composable
-private fun DrawerApp(l: Launcher, app: App) {
+private fun DrawerApp(l: Launcher, mover: Mover, app: App) {
     // Taking the app out of the tab shown removes it from under its menu; the menu must not reopen when it shows up again.
     DisposableEffect(app.id) { onDispose { if (l.popup == Popup.AppMenu(app.id)) l.popup = null } }
-    Box {
+    val item = remember(app.id, app.label) { Item.Icon(Target.App(app.id), app.label, Cell(0f, 0f)) } // what a drag drops
+    Movable(l, mover, null, item, { l.popup = Popup.AppMenu(app.id) }, Modifier) {
         Column(
             Modifier
                 .fillMaxWidth()
                 .height(129.dp)
-                .combinedClickable(
-                    interactionSource = null,
-                    indication = null,
-                    onClick = { l.start(app) },
-                    onLongClick = { l.popup = Popup.AppMenu(app.id) },
-                ),
+                .clickable(interactionSource = null, indication = null) { l.start(app) },
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
@@ -759,6 +867,10 @@ private fun DrawerApp(l: Launcher, app: App) {
             val hidden = l.layout.hidden.any { l.find(it) == app }
             MenuItem(l, if (hidden) "Mostrar en el cajón" else "Ocultar del cajón") {
                 l.update { it.copy(hidden = if (hidden) it.hidden.filterTo(HashSet()) { id -> l.find(id) != app } else it.hidden + app.id) }
+            }
+            val poison = l.isPoison(app)
+            MenuItem(l, if (poison) "Quitar de venenos" else "Marcar como veneno") {
+                l.update { it.copy(poisons = if (poison) it.poisons.filterTo(HashSet()) { id -> l.find(id) != app } else it.poisons + app.id) }
             }
             MenuItem(l, "Info de la app") { l.showInfo(app) }
         }
@@ -934,6 +1046,93 @@ private fun NameDialog(l: Launcher, p: Popup.Rename) {
     )
 }
 
+/** "Venenos": a pause before a poison app opens, with how often it was opened today. */
+@Composable
+private fun PauseScreen(l: Launcher, p: Popup.Pause) {
+    val opens = remember { l.opensToday(p.app) }
+    val seconds = PAUSE_SECONDS + PAUSE_STEP_SECONDS * opens // longer with each open today
+    var left by remember { mutableIntStateOf(seconds) }
+    LaunchedEffect(Unit) {
+        while (left > 0) {
+            delay(1000)
+            left--
+        }
+    }
+    val progress by animateFloatAsState(1f - left / seconds.toFloat(), tween(1000, easing = LinearEasing), label = "pause")
+    Dialog({ l.popup = null }, DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Column(
+            Modifier.fillMaxSize().background(Color.Black).systemBarsPadding().padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                CircularProgressIndicator({ progress }, Modifier.size(120.dp), color = ACCENT, strokeWidth = 4.dp, trackColor = TRACK)
+                AppImage(p.app, 72.dp)
+            }
+            Text(p.app.label, Modifier.padding(top = 24.dp), color = Color.White, fontSize = 24.sp)
+            Text(if (left > 0) "Respirá un momento" else "¿La abrís igual?", Modifier.padding(top = 8.dp), color = TAB_OFF_TEXT, fontSize = 18.sp)
+            val today = when (opens) {
+                0 -> "Hoy no la abriste"
+                1 -> "Hoy la abriste 1 vez"
+                else -> "Hoy la abriste $opens veces"
+            }
+            Text(today, Modifier.padding(top = 4.dp), color = HINT, fontSize = 14.sp)
+            Text("Cada vez que la abrís en el día, la espera suma $PAUSE_STEP_SECONDS segundos", color = HINT, fontSize = 14.sp, textAlign = TextAlign.Center)
+            Spacer(Modifier.height(48.dp))
+            Button({ l.popup = null }, colors = ButtonDefaults.buttonColors(containerColor = ACCENT, contentColor = Color.Black)) { Text("No, volver") }
+            TextButton(
+                {
+                    l.popup = null
+                    l.countOpen(p.app)
+                    p.open()
+                },
+                Modifier.padding(top = 8.dp),
+                enabled = left == 0,
+            ) { Text(if (left > 0) "Abrir en $left" else "Abrir igual") }
+        }
+    }
+}
+
+@Composable
+private fun BackupDialog(l: Launcher) = AlertDialog(
+    onDismissRequest = { l.popup = null },
+    title = { Text("Copia del escritorio") },
+    text = {
+        Column {
+            Text(
+                "Guardá en un archivo el escritorio, el dock, las pestañas y los venenos, o restauralos desde uno. " +
+                    "Restaurar reemplaza lo que hay; los widgets que falten se vuelven a configurar tocándolos.",
+            )
+            Text("Copia automática semanal", Modifier.padding(top = 16.dp), style = MaterialTheme.typography.titleSmall)
+            val folder = l.backupFolder
+            Text(
+                folder?.let { "En ${DocumentsContract.getTreeDocumentId(it).substringAfter(':').ifEmpty { "la carpeta elegida" }}" } ?: "Apagada",
+                color = TAB_OFF_TEXT,
+            )
+            Row {
+                TextButton({
+                    l.popup = null
+                    l.chooseBackupFolder()
+                }) { Text(if (folder == null) "Elegir carpeta" else "Cambiar carpeta") }
+                if (folder != null) TextButton(l::stopAutoBackup) { Text("Apagar") }
+            }
+        }
+    },
+    confirmButton = {
+        Row {
+            TextButton({
+                l.popup = null
+                l.restoreBackup()
+            }) { Text("Restaurar") }
+            TextButton({
+                l.popup = null
+                l.saveBackup()
+            }) { Text("Guardar") }
+        }
+    },
+    dismissButton = { TextButton({ l.popup = null }) { Text("Cancelar") } },
+)
+
 /** Shown by [PinActivity] over whatever app asked to add a shortcut. */
 @Composable
 fun PinDialog(label: String, from: String, onCancel: () -> Unit, onAdd: () -> Unit) {
@@ -976,6 +1175,7 @@ private fun Modifier.longPressDrag(
     onDragStart: (Offset) -> Unit,
     onDrag: (Offset) -> Unit,
     onDrop: () -> Unit,
+    onCancel: () -> Unit,
 ) = pointerInput(key) {
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
@@ -988,18 +1188,23 @@ private fun Modifier.longPressDrag(
         if (released != null) return@awaitEachGesture
         onLongPress()
         var dragging = false
-        // Swallow the rest of the gesture, so the item gets a cancel instead of a click and the pager stays put.
-        do {
-            val event = awaitPointerEvent(PointerEventPass.Initial)
-            event.changes.firstOrNull { it.id == down.id && it.pressed }?.let { change ->
-                if (!dragging && (change.position - down.position).getDistance() > viewConfiguration.touchSlop) {
-                    dragging = true
-                    onDragStart(down.position)
+        try {
+            // Swallow the rest of the gesture, so the item gets a cancel instead of a click and the pager stays put.
+            do {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                event.changes.firstOrNull { it.id == down.id && it.pressed }?.let { change ->
+                    if (!dragging && (change.position - down.position).getDistance() > viewConfiguration.touchSlop) {
+                        dragging = true
+                        onDragStart(down.position)
+                    }
+                    if (dragging) onDrag(change.position)
                 }
-                if (dragging) onDrag(change.position)
-            }
-            event.changes.forEach { it.consume() }
-        } while (event.changes.any { it.pressed })
+                event.changes.forEach { it.consume() }
+            } while (event.changes.any { it.pressed })
+        } catch (e: CancellationException) { // the item left the screen mid-drag (e.g. its app was uninstalled)
+            if (dragging) onCancel()
+            throw e
+        }
         if (dragging) onDrop()
     }
 }

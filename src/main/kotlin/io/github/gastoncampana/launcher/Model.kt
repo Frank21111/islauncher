@@ -4,6 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.text.Normalizer
 import kotlin.math.abs
+import kotlin.math.pow
 
 /** Stable id of a launchable activity: "<flattened component>#<user serial number>". */
 typealias AppId = String
@@ -51,6 +52,8 @@ data class Layout(
     val doubleTap: Target? = null,
     /** Left out of every drawer tab; search still finds them, as in Nova. */
     val hidden: Set<AppId> = emptySet(),
+    /** "Venenos": apps that open only after a pause. */
+    val poisons: Set<AppId> = emptySet(),
 )
 
 fun <T> List<T>.replaced(index: Int, f: (T) -> T): List<T> = mapIndexed { i, x -> if (i == index) f(x) else x }
@@ -82,10 +85,14 @@ fun freeCell(items: List<Item>, w: Float, h: Float): Cell? {
     return null
 }
 
-/** Moves [item] from page [from] to the free half-cell spot of page [to] nearest [want]; unchanged when none is free. */
-fun Layout.moved(from: Int, item: Item, to: Int, want: Cell): Layout {
-    if (item !in desktop.getOrNull(from).orEmpty() || to !in desktop.indices) return this
-    val others = desktop[to] - item
+/**
+ * Moves [item] from page [from] (null: a new item) to the free half-cell spot of page [to] nearest [want];
+ * unchanged when none is free.
+ */
+fun Layout.moved(from: Int?, item: Item, to: Int, want: Cell): Layout {
+    if ((from != null && item !in desktop.getOrNull(from).orEmpty()) || to !in desktop.indices) return this
+    // Only the moved item leaves page [to]: an equal one there (a twin, or the same app the drawer drops) stays.
+    val others = if (from == to) desktop[to] - item else desktop[to]
     val (w, h) = item.cell.w to item.cell.h
     val spots = (0..((GRID - h) * 2).toInt()).flatMap { y2 -> (0..((GRID - w) * 2).toInt()).map { x2 -> Cell(x2 / 2f, y2 / 2f, w, h) } }
     val cell = spots.filter { spot -> others.none { it.cell.overlaps(spot) } }
@@ -94,8 +101,24 @@ fun Layout.moved(from: Int, item: Item, to: Int, want: Cell): Layout {
         is Item.Icon -> item.copy(cell = cell)
         is Item.Widget -> item.copy(cell = cell)
     }
-    return copy(desktop = desktop.mapIndexed { i, page -> if (i == to) (page - item) + moved else if (i == from) page - item else page })
+    return copy(desktop = desktop.mapIndexed { i, page -> if (i == to) others + moved else if (i == from) page - item else page })
 }
+
+/**
+ * A layout read from a backup file. Widgets whose id is not one of this install's ([live], id to provider) for
+ * the same provider become placeholders to set up again; items off the grid are dropped.
+ */
+fun Layout.restored(live: Map<Int, String?>): Layout {
+    // Every page stays composed, so a file with thousands would make each start run out of memory.
+    val pages = desktop.take(MAX_PAGES).map { page ->
+        page.filter { it.cell.let { (x, y, w, h) -> w > 0 && h > 0 && x >= 0 && y >= 0 && x + w <= GRID && y + h <= GRID } } // NaN fails too
+            .map { if (it is Item.Widget && live[it.widgetId] != it.provider) it.copy(widgetId = 0) else it }
+    }
+    return copy(dock = dock.take(MAX_PAGES), desktop = pages, defaultPage = defaultPage.takeIf { it in pages.indices } ?: 0)
+}
+
+/** Most desktop or dock pages a restored backup keeps. */
+const val MAX_PAGES = 20
 
 fun Layout.toJson(): String = JSONObject()
     .put("dock", JSONArray(dock.map { page -> JSONArray(page.map { it.toJson() }) }))
@@ -104,6 +127,7 @@ fun Layout.toJson(): String = JSONObject()
     .put("tabs", JSONArray(tabs.map { tab -> JSONObject().put("name", tab.name).put("hide", tab.hideApps).put("apps", tab.apps?.let { JSONArray(it.toList()) }) }))
     .put("doubleTap", doubleTap?.toJson()) // null removes the key
     .put("hidden", JSONArray(hidden.toList()))
+    .put("poisons", JSONArray(poisons.toList()))
     .toString()
 
 fun parseLayout(json: String): Layout {
@@ -118,7 +142,8 @@ fun parseLayout(json: String): Layout {
     }
     val defaultPage = root.optInt("defaultPage").takeIf { it in desktop.indices } ?: 0
     val hidden = root.optJSONArray("hidden")?.strings()?.toSet().orEmpty()
-    return Layout(dock, desktop, defaultPage, tabs, root.target("doubleTap"), hidden)
+    val poisons = root.optJSONArray("poisons")?.strings()?.toSet().orEmpty()
+    return Layout(dock, desktop, defaultPage, tabs, root.target("doubleTap"), hidden, poisons)
 }
 
 private fun Target.toJson() = when (this) {
@@ -167,6 +192,68 @@ fun <T> search(items: List<T>, query: String, label: (T) -> String): List<T> {
             else -> null
         }?.let { it to item }
     }.sortedBy { it.first }.map { it.second }
+}
+
+/**
+ * The value of a search query that is a sum, like "125*3" or "1,5 + 2" (null for anything else, a lone number
+ * included). Both '.' and ',' are decimal points; x × ÷ ^ % and parentheses work as on a calculator.
+ */
+fun calc(query: String): Double? {
+    val s = query.filterNot { it == ' ' }.map { CALC_ALIASES[it] ?: it }.joinToString("")
+    // The parser recurses per parenthesis or power, so pasted junk could overflow the stack.
+    if (s.length > 100 || s.drop(1).none { it in "+-*/^%" }) return null
+    return try {
+        Calc(s).run { sum().takeIf { done() && it.isFinite() } }
+    } catch (e: NumberFormatException) {
+        null
+    }
+}
+
+private val CALC_ALIASES = mapOf('x' to '*', '×' to '*', '÷' to '/', ',' to '.')
+
+/** Recursive descent over [s]: sum = term (± term)*, term = power (× power)*, power = factor (^ power)?. */
+private class Calc(private val s: String) {
+    private var i = 0
+
+    fun done() = i == s.length
+
+    private fun next(vararg ops: Char) = s.getOrNull(i)?.takeIf { it in ops }?.also { i++ }
+
+    fun sum(): Double {
+        var v = term()
+        while (true) v = when (next('+', '-')) {
+            '+' -> v + term()
+            '-' -> v - term()
+            else -> return v
+        }
+    }
+
+    private fun term(): Double {
+        var v = power()
+        while (true) v = when (next('*', '/')) {
+            '*' -> v * power()
+            '/' -> v / power()
+            else -> return v
+        }
+    }
+
+    private fun power(): Double {
+        val base = factor()
+        return if (next('^') != null) base.pow(power()) else base
+    }
+
+    private fun factor(): Double {
+        val v = when {
+            next('-') != null -> return -power() // -2^2 is -4, as on paper
+            next('(') != null -> sum().also { next(')') ?: throw NumberFormatException("no closing parenthesis") }
+            else -> {
+                val start = i
+                while (s.getOrNull(i)?.let { it.isDigit() || it == '.' } == true) i++
+                s.substring(start, i).toDouble() // throws when empty or "1..2"
+            }
+        }
+        return if (next('%') != null) v / 100 else v
+    }
 }
 
 /** Direction of a drag by its dominant axis, or null when it is shorter than [minDistance]. */

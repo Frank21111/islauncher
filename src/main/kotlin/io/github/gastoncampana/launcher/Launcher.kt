@@ -19,10 +19,12 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.drawable.Drawable
+import android.net.Uri
 import android.os.Bundle
 import android.os.Process
 import android.os.UserHandle
 import android.os.UserManager
+import android.provider.DocumentsContract
 import android.text.format.DateFormat
 import android.util.Log
 import android.view.ViewGroup
@@ -43,13 +45,16 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
+import androidx.core.net.toUri
 import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import java.text.SimpleDateFormat
+import java.time.LocalDate
 import java.util.Date
 import java.util.Locale
 import kotlin.math.ceil
@@ -58,6 +63,8 @@ private const val TAG = "Launcher"
 private const val LAYOUT_KEY = "layout"
 private const val HOST_ID = 1024
 private const val REQUEST_CONFIGURE = 1
+private const val FOLDER_ACCESS = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+private const val MAX_BACKUP_BYTES = 1 shl 20 // a layout is a few KB; anything bigger is the wrong file
 
 class App(val id: AppId, val label: String, val icon: ImageBitmap, val info: LauncherActivityInfo, val suspended: Boolean)
 
@@ -76,8 +83,10 @@ object Layouts {
     val hasCorruptCopy get() = prefs.contains("$LAYOUT_KEY.corrupt")
 
     fun update(f: (Layout) -> Layout) {
-        current = f(current)
-        prefs.edit { putString(LAYOUT_KEY, current.toJson()) }
+        val next = f(current)
+        val json = next.toJson() // first: if it throws, screen and saved layout still agree
+        current = next
+        prefs.edit { putString(LAYOUT_KEY, json) }
     }
 
     private fun load(): Layout {
@@ -120,7 +129,7 @@ class Launcher : ComponentActivity() {
     var popup by mutableStateOf<Popup?>(null)
     var homePresses by mutableIntStateOf(0) // home pressed while already on the home screen
         private set
-    var stops by mutableIntStateOf(0)
+    var drawerResets by mutableIntStateOf(0) // bumped to close the drawer without its exit animation
         private set
     var today by mutableStateOf("")
         private set
@@ -159,12 +168,14 @@ class Launcher : ComponentActivity() {
             host.appWidgetIds.filter { it !in used }.forEach(host::deleteAppWidgetId)
         }
         reload()
+        backupFolder = backups.getString("folder", null)?.toUri()
         setContent { LauncherScreen(this) }
     }
 
     override fun onStart() {
         super.onStart()
         host.startListening()
+        autoBackup()
     }
 
     override fun onResume() {
@@ -183,7 +194,7 @@ class Launcher : ComponentActivity() {
         super.onStop()
         host.stopListening()
         closeAll() // come back to a clean home screen after opening an app
-        stops++
+        hideDrawer() // gone on return, rather than fading out then
     }
 
     override fun onDestroy() {
@@ -195,6 +206,11 @@ class Launcher : ComponentActivity() {
     fun closeAll() {
         drawerOpen = false
         popup = null
+    }
+
+    fun hideDrawer() {
+        drawerOpen = false
+        drawerResets++
     }
 
     fun openSearch() {
@@ -252,23 +268,57 @@ class Launcher : ComponentActivity() {
         when (target) {
             null -> Unit
             is Target.App -> appOf(target)?.let(::start) ?: toast("La app no está instalada o está desactivada")
-            is Target.Shortcut -> try {
-                launcherApps.startShortcut(target.pkg, target.id, null, null, Process.myUserHandle())
-            } catch (e: RuntimeException) { // not the default home app, shortcut removed, or user locked
-                Log.w(TAG, "Cannot start shortcut ${target.pkg}/${target.id}", e)
-                toast(
-                    if (!launcherApps.hasShortcutHostPermission()) "Los atajos funcionan cuando Launcher es la app de inicio"
-                    else "No se pudo abrir «${labelOf(target)}». Volvé a agregarlo desde su app",
-                )
-            }
+            is Target.Shortcut -> pauseIfPoison(appOf(target)) { startShortcut(target) }
         }
     }
 
-    fun start(app: App) = orToast(app.label) { launcherApps.startMainActivity(app.info.componentName, app.info.user, null, null) }
+    private fun startShortcut(target: Target.Shortcut) = try {
+        launcherApps.startShortcut(target.pkg, target.id, null, null, Process.myUserHandle())
+    } catch (e: RuntimeException) { // not the default home app, shortcut removed, or user locked
+        Log.w(TAG, "Cannot start shortcut ${target.pkg}/${target.id}", e)
+        toast(
+            if (!launcherApps.hasShortcutHostPermission()) "Los atajos funcionan cuando Launcher es la app de inicio"
+            else "No se pudo abrir «${labelOf(target)}». Volvé a agregarlo desde su app",
+        )
+    }
+
+    fun start(app: App) = pauseIfPoison(app) {
+        orToast(app.label) { launcherApps.startMainActivity(app.info.componentName, app.info.user, null, null) }
+    }
+
+    // By package: an app that switches launcher aliases (Mercado Pago) stays poison under either activity.
+    fun isPoison(app: App) = layout.poisons.any { find(it)?.let(::packageOf) == packageOf(app) }
+
+    private fun packageOf(app: App) = app.info.componentName.packageName to app.info.user
+
+    /** Opens a poison app (or one of its shortcuts) only through the pause screen. */
+    private fun pauseIfPoison(app: App?, open: () -> Unit) {
+        if (app != null && isPoison(app)) popup = Popup.Pause(app, open) else open()
+    }
+
+    // Opens of each poison app today, as "<date>|<package>#<user>" counts; older days are dropped on the next write.
+    private val opens by lazy { getSharedPreferences("opens", MODE_PRIVATE) }
+
+    private fun opensKey(app: App) = "${LocalDate.now()}|${app.id.substringBefore('/')}#${app.id.substringAfterLast('#')}"
+
+    fun opensToday(app: App) = opens.getInt(opensKey(app), 0)
+
+    fun countOpen(app: App) {
+        val today = LocalDate.now().toString()
+        opens.edit {
+            opens.all.keys.filterNot { it.startsWith("$today|") }.forEach(::remove)
+            putInt(opensKey(app), opensToday(app) + 1)
+        }
+    }
 
     fun showInfo(app: App) = orToast(app.label) { launcherApps.startAppDetailsActivity(app.info.componentName, app.info.user, null, null) }
 
-    fun startIntent(intent: Intent, what: String) = orToast(what) { startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    /** Opens another app's screen (search providers, assistant, Lens, calendar), behind the pause if that app is poison. */
+    fun startIntent(intent: Intent, what: String) {
+        val pkg = intent.`package` ?: intent.resolveActivity(packageManager)?.packageName
+        val app = apps.firstOrNull { it.info.componentName.packageName == pkg && it.info.user == Process.myUserHandle() }
+        pauseIfPoison(app) { orToast(what) { startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
+    }
 
     private inline fun orToast(what: String, action: () -> Unit) {
         try {
@@ -401,6 +451,120 @@ class Launcher : ComponentActivity() {
         if (b.placeholder.widgetId != 0) host.deleteAppWidgetId(b.placeholder.widgetId) // its app had been reinstalled
         updatePage(b.page) { items -> items.map { if (it == b.placeholder) b.placeholder.copy(widgetId = b.id) else it } }
     }
+
+    // --- Backup: the layout as a JSON file the owner keeps, e.g. before reinstalling ---
+
+    private val backups by lazy { getSharedPreferences("backup", MODE_PRIVATE) }
+
+    /** The folder that gets a weekly copy, or null when that is off. */
+    var backupFolder by mutableStateOf<Uri?>(null)
+        private set
+
+    private suspend fun writeBackup(uri: Uri, json: String) = withContext(Dispatchers.IO) {
+        contentResolver.openOutputStream(uri, "wt")!!.use { it.write(json.toByteArray()) }
+    }
+
+    // Local storage only (EXTRA_LOCAL_ONLY): a backup lists every app the owner uses, and a cloud provider would
+    // upload it, which the no-network rule forbids.
+    private val saveBackup = registerForActivityResult(object : ActivityResultContracts.CreateDocument("application/json") {
+        override fun createIntent(context: Context, input: String) = super.createIntent(context, input).putExtra(Intent.EXTRA_LOCAL_ONLY, true)
+    }) { uri ->
+        if (uri == null) return@registerForActivityResult
+        val json = layout.toJson()
+        lifecycleScope.launch {
+            try {
+                writeBackup(uri, json)
+                toast("Copia guardada")
+            } catch (e: Exception) { // provider gone, no space, or no permission
+                Log.w(TAG, "Backup failed", e)
+                toast("No se pudo guardar la copia")
+            }
+        }
+    }
+
+    private val openBackup = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        lifecycleScope.launch {
+            try {
+                val json = withContext(Dispatchers.IO) {
+                    val bytes = contentResolver.openInputStream(uri)!!.use { it.readNBytes(MAX_BACKUP_BYTES + 1) }
+                    if (bytes.size > MAX_BACKUP_BYTES) throw IOException("Too big for a backup: $uri")
+                    bytes.decodeToString()
+                }
+                val old = layout.desktop.flatten().filterIsInstance<Item.Widget>().map { it.widgetId }
+                val live = host.appWidgetIds.associateWith { widgetManager.getAppWidgetInfo(it)?.provider?.flattenToString() }
+                update { parseLayout(json).restored(live) }
+                // Widgets the restored layout no longer holds would stay allocated forever.
+                val kept = layout.desktop.flatten().filterIsInstance<Item.Widget>().map { it.widgetId }.toSet()
+                old.filter { it != 0 && it !in kept }.forEach {
+                    host.deleteAppWidgetId(it)
+                    widgetViews.remove(it)
+                }
+                toast("Copia restaurada")
+            } catch (e: Exception) { // not a backup of this launcher, or unreadable
+                Log.w(TAG, "Restore failed", e)
+                toast("No se pudo leer la copia")
+            } catch (e: StackOverflowError) { // deeply nested JSON
+                Log.w(TAG, "Restore failed", e)
+                toast("No se pudo leer la copia")
+            }
+        }
+    }
+
+    fun saveBackup() = saveBackup.launch("launcher-${LocalDate.now()}.json")
+
+    private val pickFolder = registerForActivityResult(object : ActivityResultContracts.OpenDocumentTree() {
+        override fun createIntent(context: Context, input: Uri?) = super.createIntent(context, input).putExtra(Intent.EXTRA_LOCAL_ONLY, true)
+    }) { uri ->
+        if (uri == null) return@registerForActivityResult
+        contentResolver.takePersistableUriPermission(uri, FOLDER_ACCESS)
+        backupFolder?.takeIf { it != uri }?.let(::releaseFolder)
+        backups.edit {
+            putString("folder", uri.toString())
+            remove("last")
+            remove("tried")
+        }
+        backupFolder = uri
+        autoBackup() // the first copy right away
+    }
+
+    fun chooseBackupFolder() = pickFolder.launch(backupFolder)
+
+    fun stopAutoBackup() {
+        backupFolder?.let(::releaseFolder)
+        backups.edit { clear() }
+        backupFolder = null
+    }
+
+    private fun releaseFolder(uri: Uri) = try {
+        contentResolver.releasePersistableUriPermission(uri, FOLDER_ACCESS)
+    } catch (e: SecurityException) { // already gone
+        Log.w(TAG, "Folder access was already released", e)
+    }
+
+    /** A weekly copy into [backupFolder], checked whenever the home screen comes back, so no scheduler is needed. */
+    private fun autoBackup() {
+        val folder = backupFolder ?: return
+        val today = LocalDate.now().toEpochDay()
+        if (today - backups.getLong("last", 0) < 7 || backups.getLong("tried", 0) == today) return
+        backups.edit { putLong("tried", today) } // a failing copy is retried once a day, not on every return home
+        val json = layout.toJson()
+        lifecycleScope.launch {
+            try {
+                val file = withContext(Dispatchers.IO) {
+                    val dir = DocumentsContract.buildDocumentUriUsingTree(folder, DocumentsContract.getTreeDocumentId(folder))
+                    DocumentsContract.createDocument(contentResolver, dir, "application/json", "launcher-${LocalDate.now()}.json")
+                } ?: throw IOException("Cannot create a file in $folder")
+                writeBackup(file, json)
+                backups.edit { putLong("last", today) }
+            } catch (e: Exception) { // folder deleted, access revoked, or storage full
+                Log.w(TAG, "Automatic backup failed", e)
+                toast("No se pudo hacer la copia automática. Revisá la carpeta en Copia del escritorio")
+            }
+        }
+    }
+
+    fun restoreBackup() = openBackup.launch(arrayOf("application/json", "application/octet-stream", "text/plain"))
 }
 
 /**

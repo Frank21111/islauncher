@@ -8,7 +8,8 @@ A launcher sees every app the owner opens, so it must never be able to send data
 `src/main/AndroidManifest.xml` strips `android.permission.INTERNET` with `tools:node="remove"`, which also
 blocks libraries from adding it. Never remove that line or add a feature that needs the network. After adding
 a dependency, confirm with `apkanalyzer manifest permissions build/outputs/apk/release/launcher-release.apk`.
-Cloud backup is off too (`allowBackup="false"`).
+Cloud backup is off too (`allowBackup="false"`). The layout backups (manual and weekly) go through the system file
+picker with `EXTRA_LOCAL_ONLY`, so a cloud provider cannot be chosen: keep that extra on any new picker that writes.
 
 ## Commands
 
@@ -36,7 +37,12 @@ picker must see non-exported widget receivers, which a `<queries>` block misses)
   search pill. The drawer has search (with "Buscar con" providers), one swipeable page per tab and a fast scroller.
   All menus and dialogs go through one `Popup` state, so `closeAll()` closes everything.
 - The layout is stored as JSON in SharedPreferences `launcher`, key `layout`. An unreadable layout is kept under
-  `layout.corrupt` instead of being overwritten.
+  `layout.corrupt` instead of being overwritten. Prefs `opens` counts today's opens of poison apps; prefs `backup`
+  holds the weekly backup folder (a persisted SAF tree URI) and when it last ran.
+
+Features worth knowing before editing: "venenos" (`Layout.poisons`) open only after a pause that grows with each
+open today; every way the launcher opens an app (`start`, `open`, `startIntent`) goes through `pauseIfPoison`, so
+a new one must too. Known gaps: notifications, recents, and an app picked inside a system chooser. Search shows a calculator result (`calc`) when the query is a sum.
 
 The layout was first imported from a Nova backup; that importer was removed once done (see git history).
 Pinned shortcuts belong to the home app that pinned them: shortcuts Nova pinned must be re-added from their app.

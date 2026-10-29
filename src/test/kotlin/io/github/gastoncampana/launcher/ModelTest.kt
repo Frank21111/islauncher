@@ -50,8 +50,43 @@ class ModelTest {
             tabs = listOf(Tab("A", setOf("a/a.A#0"), hideApps = true), Tab("Apps")),
             doubleTap = Shortcut("rec", "quick_record", "Grabar"),
             hidden = setOf("i/i.I#0"),
+            poisons = setOf("i/i.I#0", "t/t.T#0"),
         )
         assertEquals(layout, parseLayout(layout.toJson()))
+    }
+
+    @Test
+    fun calcEvaluatesArithmeticAndIgnoresEverythingElse() {
+        assertEquals(375.0, calc("125*3")!!, 0.0)
+        assertEquals(7.0, calc("1 + 2 x 3")!!, 0.0)
+        assertEquals(9.0, calc("(1+2)×3")!!, 0.0)
+        assertEquals(3.0, calc("1,5 * 2")!!, 0.0) // a comma is a decimal point too
+        assertEquals(0.3, calc("0.1+0.2")!!, 1e-12)
+        assertEquals(-4.0, calc("-2^2")!!, 0.0)
+        assertEquals(30.0, calc("200*15%")!!, 1e-12)
+        assertEquals(2.5, calc("10÷4")!!, 0.0)
+        // Not sums: app names, lone numbers, broken or undefined expressions.
+        for (q in listOf("", "Spotify", "2048", "-5", "7-Eleven", "1+", "(1+2", "1/0", "1..2+1", "2**3")) assertNull(q, calc(q))
+        assertNull(calc("(".repeat(5000) + "1" + ")".repeat(5000))) // pasted junk must not overflow the stack
+    }
+
+    @Test
+    fun restoringKeepsLiveWidgetsAndDropsItemsOffTheGrid() {
+        val live = Item.Widget("w", 7, Cell(0f, 0f, 5f, 1f))
+        val gone = Item.Widget("w", 8, Cell(0f, 1f, 5f, 1f))
+        val icon = Item.Icon(App("a/a.A#0"), "A", Cell(4f, 4f))
+        val bad = listOf(Cell(4.5f, 0f), Cell(0f, -1f), Cell(Float.NaN, 0f), Cell(0f, 0f, 0f, 1f))
+            .map { Item.Icon(App("b/b.B#0"), "B", it) }
+        val other = Item.Widget("w", 9, Cell(0f, 2f, 5f, 1f)) // id 9 is live here, but holds another provider's widget
+        val backup = Layout(desktop = listOf(listOf(live, gone, other, icon) + bad))
+        assertEquals(
+            listOf(live, gone.copy(widgetId = 0), other.copy(widgetId = 0), icon),
+            backup.restored(mapOf(7 to "w", 9 to "x")).desktop[0],
+        )
+        val huge = Layout(dock = List(5000) { List(DOCK_SIZE) { DockIcon() } }, desktop = List(5000) { emptyList() }, defaultPage = 4999)
+        val capped = huge.restored(emptyMap())
+        assertEquals(MAX_PAGES to MAX_PAGES, capped.dock.size to capped.desktop.size)
+        assertEquals(0, capped.defaultPage)
     }
 
     @Test
@@ -121,5 +156,13 @@ class ModelTest {
         val full = Layout(desktop = listOf(listOf(a), listOf(Item.Widget("x", 1, Cell(0f, 0f, 5f, 5f)))))
         assertEquals(full, full.moved(0, a, 1, Cell(0f, 0f)))
         assertEquals(layout, layout.moved(1, a, 0, Cell(1f, 1f)))
+        // A new item, dragged from the drawer.
+        val c = Item.Icon(App("c/c.C#0"), "C", Cell(0f, 0f))
+        assertEquals(listOf(c.copy(cell = Cell(1f, 3f))), layout.moved(null, c, 1, Cell(1.1f, 2.9f)).desktop[1])
+        assertEquals(full, full.moved(null, c, 1, Cell(0f, 0f)))
+        // An equal item already there stays: a drawer drop adds a copy, a move from another page leaves it alone.
+        assertEquals(listOf(a, b, w, a.copy(cell = Cell(1f, 0f))), layout.moved(null, a, 0, Cell(0f, 0f)).desktop[0])
+        val twins = Layout(desktop = listOf(listOf(a), listOf(a)))
+        assertEquals(listOf(emptyList(), listOf(a, a.copy(cell = Cell(1f, 0f)))), twins.moved(0, a, 1, Cell(0f, 0f)).desktop)
     }
 }
