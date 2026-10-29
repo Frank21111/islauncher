@@ -21,6 +21,15 @@ class ModelTest {
     }
 
     @Test
+    fun widgetSpanTakesTargetCellsElseRoundsMinSizeUpToHalfCells() {
+        assertEquals(3f, widgetSpan(40f, 3, 90f, 5), 0f)
+        assertEquals(1.5f, widgetSpan(100f, 0, 90f, 5), 0f)
+        assertEquals(1f, widgetSpan(90f, 0, 90f, 5), 0f)
+        assertEquals(0.5f, widgetSpan(0f, 0, 90f, 5), 0f)
+        assertEquals(5f, widgetSpan(40f, 8, 90f, 5), 0f) // no wider than the grid
+    }
+
+    @Test
     fun swipeUsesDominantAxisAndIgnoresShortDrags() {
         assertNull(swipeOf(10f, -20f, 48f))
         assertEquals(Swipe.UP, swipeOf(10f, -60f, 48f))
@@ -57,8 +66,14 @@ class ModelTest {
             dockWraps = false,
             drawerColumns = 4,
             drawerRows = 8,
+            haptics = false,
         )
         assertEquals(layout, parseLayout(layout.toJson()))
+    }
+
+    @Test
+    fun hapticsStayOnForLayoutsSavedBeforeTheSetting() {
+        assertEquals(true, parseLayout("""{"dock":[[]],"desktop":[[]],"tabs":[]}""").haptics)
     }
 
     @Test

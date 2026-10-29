@@ -1,6 +1,8 @@
 package io.github.gastoncampana.launcher
 
 import android.app.SearchManager
+import android.appwidget.AppWidgetHostView
+import android.appwidget.AppWidgetProviderInfo
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -10,6 +12,10 @@ import android.os.Bundle
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.SizeF
+import android.view.MotionEvent
+import android.view.View
+import android.view.ViewGroup
+import android.widget.RemoteViews
 import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
@@ -32,6 +38,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -58,6 +65,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
@@ -99,6 +107,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -124,6 +133,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.SolidColor
@@ -133,6 +143,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -167,11 +178,15 @@ import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.graphics.drawable.toBitmap
 import androidx.core.net.toUri
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.delay
 import java.text.NumberFormat
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -196,6 +211,9 @@ private val TAB_HEIGHT = 40.dp
 private val TAB_GAP = 11.dp // above the tabs
 private val GRID_PADDING = PaddingValues(start = 8.dp, end = 8.dp, top = 25.dp, bottom = 16.dp)
 private val LABEL_SPACE = 28.dp // a label under an icon, with its gap
+private val PREVIEW_HEIGHT = 160.dp // a widget's preview in the widget picker, at most
+// Widget previews load and inflate here, two at a time: a fling neither stutters nor floods the IO pool.
+private val PREVIEW_LOADER = Dispatchers.IO.limitedParallelism(2)
 private const val ICON_SHARE = 0.62f // of a cell's width, at most: Nova's icon on a 5-column grid
 private const val DOCK_LOOPS = 1000 // virtual dock pages, so it scrolls around in both directions
 private const val EDGE_HOLD_MS = 600L // holding a dragged item at a side this long flips the page
@@ -223,7 +241,8 @@ sealed interface Popup {
 
 @Composable
 fun LauncherScreen(l: Launcher) {
-    val mover = remember { Mover(l) }
+    val haptic = rememberHaptic(l)
+    val mover = remember { Mover(l, haptic) }
     MaterialTheme(colorScheme = novaColors()) {
         Box(Modifier.fillMaxSize()) {
             // Hidden, not removed, under Ajustes: its clear preview strips show the wallpaper, and pages and widgets keep their state.
@@ -252,6 +271,31 @@ fun LauncherScreen(l: Launcher) {
     }
 }
 
+/**
+ * Every vibration goes through here, so the setting in Ajustes silences them all. The system's touch feedback
+ * setting still applies: nothing forces it.
+ */
+@Composable
+private fun rememberHaptic(l: Launcher): (HapticFeedbackType) -> Unit {
+    val feedback = LocalHapticFeedback.current
+    return remember(feedback) { { type -> if (l.layout.haptics) feedback.performHapticFeedback(type) } }
+}
+
+/**
+ * Text fields vibrate on their own when selecting text: this sends [content]'s through [rememberHaptic] too. Each
+ * dialog provides its own [LocalHapticFeedback], so the field itself is wrapped.
+ */
+@Composable
+private fun GatedHaptics(l: Launcher, content: @Composable () -> Unit) {
+    val haptic = rememberHaptic(l)
+    val feedback = remember(haptic) {
+        object : HapticFeedback {
+            override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) = haptic(hapticFeedbackType)
+        }
+    }
+    CompositionLocalProvider(LocalHapticFeedback provides feedback, content)
+}
+
 // --- Home: desktop pages, dock, search bar ---
 
 @Composable
@@ -260,7 +304,7 @@ private fun Home(l: Launcher, mover: Mover) {
     val pages = layout.desktop.size
     val pager = key(pages, layout.defaultPage) { rememberPagerState(initialPage = layout.defaultPage) { pages } }
     SideEffect { mover.pager = pager }
-    val haptic = LocalHapticFeedback.current
+    val haptic = rememberHaptic(l)
     LaunchedEffect(l.homePresses) {
         if (l.homePresses == 0) return@LaunchedEffect
         // Like Nova: home goes back to the main page, and opens search when already there.
@@ -273,6 +317,7 @@ private fun Home(l: Launcher, mover: Mover) {
             delay(EDGE_HOLD_MS)
             val next = pager.currentPage + edge
             if (next !in 0..<pager.pageCount) break
+            haptic(HapticFeedbackType.SegmentTick)
             pager.animateScrollToPage(next)
         }
     }
@@ -281,9 +326,12 @@ private fun Home(l: Launcher, mover: Mover) {
             Modifier
                 .fillMaxSize()
                 .onVerticalSwipe(
-                    up = { l.drawerOpen = true },
+                    up = {
+                        haptic(HapticFeedbackType.GestureThresholdActivate)
+                        l.drawerOpen = true
+                    },
                     down = {
-                        haptic.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+                        haptic(HapticFeedbackType.GestureThresholdActivate)
                         l.expandNotifications()
                     },
                 )
@@ -314,7 +362,7 @@ private class Drag(val page: Int?, val item: Item, val layer: GraphicsLayer, val
 }
 
 /** Drags items onto the desktop page shown (the nearest free spot) or into an empty dock slot. */
-private class Mover(private val l: Launcher) {
+private class Mover(private val l: Launcher, private val haptic: (HapticFeedbackType) -> Unit) {
     var drag by mutableStateOf<Drag?>(null)
     var pager: PagerState? = null // the desktop's, set by Home
     var bounds = Rect.Zero // the desktop pager, in root coordinates
@@ -340,7 +388,7 @@ private class Mover(private val l: Launcher) {
         val want = d.item.cell.copy(x = at.x / bounds.width * l.layout.columns, y = at.y / bounds.height * l.layout.rows)
         val before = l.layout
         l.update { it.moved(d.page, d.item, page, want) }
-        if (l.layout === before) l.toast(l.getString(R.string.desktop_no_room_page))
+        if (l.layout === before) refuse(R.string.desktop_no_room_page) else haptic(HapticFeedbackType.Confirm)
     }
 
     // Only an empty slot: replacing a dock icon by accident would lose its swipes' setup with no undo.
@@ -348,28 +396,43 @@ private class Mover(private val l: Launcher) {
         val page = dockPage()
         val size = l.layout.dockSize
         val slot = ((d.pointer.x - dock.left) / dock.width * size).toInt().coerceIn(0, size - 1)
-        if (l.layout.dock[page][slot].tap != null) return l.toast(l.getString(R.string.dock_slot_taken))
+        if (l.layout.dock[page][slot].tap != null) return refuse(R.string.dock_slot_taken)
         l.update { layout ->
             layout.copy(
                 dock = layout.dock.replaced(page) { it.replaced(slot) { icon -> icon.copy(tap = app) } },
                 desktop = if (d.page == null) layout.desktop else layout.desktop.replaced(d.page) { it - d.item },
             )
         }
+        haptic(HapticFeedbackType.Confirm)
+    }
+
+    private fun refuse(@StringRes why: Int) {
+        haptic(HapticFeedbackType.Reject)
+        l.toast(l.getString(why))
     }
 }
 
 @Composable
 private fun DesktopPage(l: Launcher, mover: Mover, page: Int) {
+    val haptic = rememberHaptic(l)
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
             .pointerInput(page) {
                 detectTapGestures(
-                    onDoubleTap = { l.open(l.layout.doubleTap) },
+                    onDoubleTap = {
+                        l.layout.doubleTap?.let {
+                            haptic(HapticFeedbackType.Confirm)
+                            l.open(it)
+                        }
+                    },
                     onLongPress = { at ->
                         // A widget that ignores touches lets the press through; the widget opens its own menu.
                         val point = Cell(at.x / size.width * l.layout.columns, at.y / size.height * l.layout.rows, 0f, 0f)
-                        if (l.layout.desktop.getOrNull(page).orEmpty().none { it.cell.overlaps(point) }) l.popup = Popup.DesktopMenu(page, at)
+                        if (l.layout.desktop.getOrNull(page).orEmpty().none { it.cell.overlaps(point) }) {
+                            haptic(HapticFeedbackType.LongPress)
+                            l.popup = Popup.DesktopMenu(page, at)
+                        }
                     },
                 )
             },
@@ -407,7 +470,7 @@ private fun Movable(
     content: @Composable BoxScope.() -> Unit,
 ) {
     val layer = rememberGraphicsLayer()
-    val haptic = LocalHapticFeedback.current
+    val haptic = rememberHaptic(l)
     val keyboard = LocalSoftwareKeyboardController.current // open when dragging from search results
     var coords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     Box(
@@ -421,7 +484,7 @@ private fun Movable(
             .longPressDrag(
                 item,
                 onLongPress = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    haptic(HapticFeedbackType.LongPress) // a drag starts from this press, so it adds none
                     onLongPress()
                 },
                 onDragStart = { grab ->
@@ -546,6 +609,7 @@ private fun Dock(l: Launcher, mover: Mover) {
 @Composable
 private fun DockSlot(l: Launcher, virtualPage: Int, slot: Int, icon: DockIcon, iconSize: Dp, modifier: Modifier) {
     val page = virtualPage % l.layout.dock.size
+    val haptic = rememberHaptic(l)
     Box(
         modifier
             .fillMaxHeight()
@@ -554,8 +618,10 @@ private fun DockSlot(l: Launcher, virtualPage: Int, slot: Int, icon: DockIcon, i
                 detectVerticalDragGestures(
                     onDragStart = { total = 0f },
                     onDragEnd = {
+                        val swipe = swipeOf(0f, total, SWIPE_MIN.toPx()) ?: return@detectVerticalDragGestures
+                        haptic(HapticFeedbackType.GestureThresholdActivate)
                         // Without a target of its own, a swipe does what it does elsewhere on the home screen.
-                        when (swipeOf(0f, total, SWIPE_MIN.toPx())) {
+                        when (swipe) {
                             Swipe.UP -> if (icon.up != null) l.open(icon.up) else l.drawerOpen = true
                             Swipe.DOWN -> if (icon.down != null) l.open(icon.down) else l.expandNotifications()
                             else -> Unit
@@ -569,8 +635,12 @@ private fun DockSlot(l: Launcher, virtualPage: Int, slot: Int, icon: DockIcon, i
             .combinedClickable(
                 interactionSource = null,
                 indication = null,
+                hapticFeedbackEnabled = false, // its own would bypass the setting
                 onClick = { l.open(icon.tap) },
-                onLongClick = { l.popup = Popup.DockMenu(virtualPage, slot) },
+                onLongClick = {
+                    haptic(HapticFeedbackType.LongPress)
+                    l.popup = Popup.DockMenu(virtualPage, slot)
+                },
             ),
         contentAlignment = Alignment.Center,
     ) {
@@ -694,6 +764,13 @@ private fun Drawer(l: Launcher, mover: Mover) {
     val searching = query.isNotBlank()
     val results = if (searching) search(l.apps, query) { it.label } else emptyList()
     fun appsOf(tab: Int) = tabs.getOrNull(tab)?.let { tabApps(it, tabs, l.apps, l.find, l.layout.hidden) } ?: l.apps
+    val haptic = rememberHaptic(l)
+    // A pull keeps scrolling past the point that closed the drawer: only that point ticks.
+    fun close() {
+        if (!l.drawerOpen) return
+        haptic(HapticFeedbackType.GestureThresholdActivate)
+        l.drawerOpen = false
+    }
 
     // Pulling down past the top of the grid closes the drawer, as does flicking down from there.
     val closePx = with(LocalDensity.current) { SWIPE_MIN.toPx() }
@@ -702,13 +779,13 @@ private fun Drawer(l: Launcher, mover: Mover) {
             private var pulled = 0f
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
                 pulled = if (source == NestedScrollSource.UserInput && available.y > 0) pulled + available.y else 0f
-                if (pulled > closePx) l.drawerOpen = false
+                if (pulled > closePx) close()
                 return Offset.Zero
             }
 
             // Runs when every drag ends, so the next gesture starts from zero.
             override suspend fun onPreFling(available: Velocity): Velocity {
-                if (pulled > 0 && available.y > 0) l.drawerOpen = false
+                if (pulled > 0 && available.y > 0) close()
                 pulled = 0f
                 return Velocity.Zero
             }
@@ -719,10 +796,10 @@ private fun Drawer(l: Launcher, mover: Mover) {
         Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .onVerticalSwipe(down = { l.drawerOpen = false })
+            .onVerticalSwipe(down = ::close)
             .systemBarsPadding(),
     ) {
-        SearchField(query, { query = it }, focus) { results.firstOrNull()?.let(l::start) }
+        GatedHaptics(l) { SearchField(query, { query = it }, focus) { results.firstOrNull()?.let(l::start) } }
         BoxWithConstraints(Modifier.weight(1f)) {
             // Rows split the height under the tabs without the keyboard, so they keep their size while searching.
             val padding = GRID_PADDING.calculateTopPadding() + GRID_PADDING.calculateBottomPadding()
@@ -852,6 +929,7 @@ private fun SearchField(query: String, onChange: (String) -> Unit, focus: FocusR
 
 @Composable
 private fun Tabs(l: Launcher, selected: Int, onSelect: (Int) -> Unit) {
+    val haptic = rememberHaptic(l)
     LazyRow(
         Modifier.padding(top = TAB_GAP),
         contentPadding = PaddingValues(horizontal = 24.dp),
@@ -859,7 +937,18 @@ private fun Tabs(l: Launcher, selected: Int, onSelect: (Int) -> Unit) {
     ) {
         itemsIndexed(l.layout.tabs) { i, tab ->
             Box {
-                Bubble(tab.name, i == selected, Modifier.combinedClickable(onClick = { onSelect(i) }, onLongClick = { l.popup = Popup.TabMenu(i) }))
+                Bubble(
+                    tab.name,
+                    i == selected,
+                    Modifier.combinedClickable(
+                        hapticFeedbackEnabled = false, // its own would bypass the setting
+                        onClick = { onSelect(i) },
+                        onLongClick = {
+                            haptic(HapticFeedbackType.LongPress)
+                            l.popup = Popup.TabMenu(i)
+                        },
+                    ),
+                )
                 DropdownMenu(l.popup == Popup.TabMenu(i), { l.popup = null }) {
                     MenuItem(l, stringResource(R.string.rename)) {
                         l.popup = Popup.Rename(l.getString(R.string.drawer_rename_tab), tab.name) { name ->
@@ -1039,7 +1128,7 @@ private fun PickerDialog(l: Launcher, title: String, query: String, onQuery: (St
         Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
             Column(Modifier.padding(16.dp).heightIn(max = 560.dp)) {
                 Text(title, Modifier.padding(start = 4.dp, bottom = 8.dp), style = MaterialTheme.typography.titleMedium)
-                OutlinedTextField(query, onQuery, Modifier.fillMaxWidth(), placeholder = { Text(stringResource(R.string.search)) }, singleLine = true)
+                GatedHaptics(l) { OutlinedTextField(query, onQuery, Modifier.fillMaxWidth(), placeholder = { Text(stringResource(R.string.search)) }, singleLine = true) }
                 LazyColumn(content = rows)
             }
         }
@@ -1059,31 +1148,155 @@ private fun AppPicker(l: Launcher, p: Popup.PickApp) {
     }
 }
 
+/**
+ * A widget in the picker, under its app's [appLabel] and [icon]. Its previews stay loaded while the picker is open,
+ * so a row scrolled back into view shows them at once.
+ */
+private class WidgetChoice(val info: AppWidgetProviderInfo, val appLabel: String, val name: String, val icon: ImageBitmap) {
+    val label = "$appLabel · $name"
+    var previews by mutableStateOf<List<RemoteViews>?>(null)
+    var failed by mutableIntStateOf(0) // of previews, those that would not inflate
+    var image by mutableStateOf<ImageBitmap?>(null)
+    var imageLoaded by mutableStateOf(false) // the icon waits, so it does not flash before the image
+}
+
+/** Widgets grouped by app as in Nova, each with its preview and the cells it takes. Search finds app and widget names. */
 @Composable
 private fun WidgetPicker(l: Launcher, page: Int) {
     val pm = LocalContext.current.packageManager
-    val providers = remember {
+    val iconPx = with(LocalDensity.current) { ICON.roundToPx() }
+    val widgets = remember {
+        val icons = HashMap<String, ImageBitmap>()
         l.widgetProviders()
-            .map { it to "${pm.getApplicationLabel(it.activityInfo.applicationInfo)} · ${it.loadLabel(pm)}" }
-            .sortedBy { fold(it.second) }
+            .map {
+                val pkg = it.provider.packageName
+                // An app with widgets but no launcher entry still has an icon.
+                val icon = icons.getOrPut(pkg) {
+                    l.appOf(Target.Shortcut(pkg, "", ""))?.icon ?: pm.getApplicationIcon(it.activityInfo.applicationInfo).toBitmap(iconPx, iconPx).asImageBitmap()
+                }
+                WidgetChoice(it, pm.getApplicationLabel(it.activityInfo.applicationInfo).toString(), it.loadLabel(pm), icon)
+            }
+            // Not on label: "·" sorts after letters, so "Google" would follow "Google Fotos".
+            .sortedWith(compareBy({ fold(it.appLabel) }, { fold(it.name) }))
     }
     var query by remember { mutableStateOf("") }
     PickerDialog(l, stringResource(R.string.widget_add), query, { query = it }) {
-        items(search(providers, query) { it.second }) { (info, label) ->
-            PickerRow(l.appOf(Target.Shortcut(info.provider.packageName, "", ""))?.icon, label) {
-                l.popup = null
-                l.addWidget(page, info)
-            }
+        // Apps in the order of their best match.
+        for ((pkg, found) in search(widgets, query) { it.label }.groupBy { it.info.provider.packageName }) {
+            item(key = pkg) { PickerRow(found[0].icon, found[0].appLabel, onClick = null) }
+            items(found, key = { it.info.provider.flattenToString() }) { WidgetRow(l, page, it) }
         }
     }
 }
 
 @Composable
-private fun PickerRow(icon: ImageBitmap?, label: String, checked: Boolean? = null, onClick: () -> Unit) {
+private fun WidgetRow(l: Launcher, page: Int, widget: WidgetChoice) {
+    // The function addWidget sizes it with, so the preview and "2 × 2" match what lands on the desktop.
+    val (w, h) = remember(widget) { l.widgetCells(widget.info) }
+    val number = remember { NumberFormat.getNumberInstance() } // half cells read "1.5" or "1,5"
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable {
+                l.popup = null
+                l.addWidget(page, widget.info)
+            }
+            .padding(8.dp),
+    ) {
+        WidgetPreview(l, widget, DpSize(l.cellSize.width * w, l.cellSize.height * h))
+        Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(widget.name, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            val cells = stringResource(R.string.widget_cells, number.format(w), number.format(h))
+            Text(
+                "${number.format(w)} × ${number.format(h)}",
+                Modifier.padding(start = 12.dp).clearAndSetSemantics { contentDescription = cells },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+}
+
+/**
+ * A widget's preview, laid out at its size on the desktop ([real]) and scaled down to fit, as Launcher3 shows it:
+ * one of [Launcher.widgetPreviews] (the next one when it fails to inflate), else its preview image, else its app's icon.
+ */
+@Composable
+private fun WidgetPreview(l: Launcher, widget: WidgetChoice, real: DpSize) = BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+    val scale = minOf(1f, maxWidth / real.width, PREVIEW_HEIGHT / real.height)
+    val size = real * scale
+    val placeholder = Modifier.size(size).clip(RoundedCornerShape(16.dp)).background(Color.White.copy(alpha = 0.08f))
+    val views = widget.previews
+    LaunchedEffect(widget) {
+        if (widget.previews == null) widget.previews = withContext(PREVIEW_LOADER) { l.widgetPreviews(widget.info) }
+    }
+    val view = views?.getOrNull(widget.failed)
+    when {
+        views == null -> Box(placeholder)
+        view != null -> key(widget.failed) {
+            Box(Modifier.size(size)) {
+                AndroidView(
+                    {
+                        PreviewHost(it).apply {
+                            onError = { widget.failed++ }
+                            setAppWidget(-1, widget.info) // no widget id: nothing is allocated or bound
+                            setExecutor(PREVIEW_LOADER.asExecutor()) // inflates off the main thread
+                            updateAppWidget(view)
+                        }
+                    },
+                    // Centred on the box, then scaled into it.
+                    Modifier.requiredSize(real).graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                    },
+                    onRelease = { it.setExecutor(null) }, // a row scrolled away drops its pending inflation
+                )
+            }
+        }
+        else -> {
+            val px = with(LocalDensity.current) { size.toSize() }
+            LaunchedEffect(widget) {
+                if (widget.imageLoaded) return@LaunchedEffect
+                widget.image = withContext(PREVIEW_LOADER) { l.widgetPreviewImage(widget.info, px.width.roundToInt(), px.height.roundToInt()) }
+                widget.imageLoaded = true
+            }
+            widget.image?.let { Image(it, null, Modifier.size(size)) } ?: Box(placeholder, contentAlignment = Alignment.Center) {
+                if (widget.imageLoaded) Image(widget.icon, null, Modifier.size(ICON))
+            }
+        }
+    }
+}
+
+/**
+ * Hosts a widget's preview as Launcher3 does, under no widget id. Touches and focus never reach it, so they go to its
+ * row and its buttons never fire; it is hidden from accessibility too.
+ */
+private class PreviewHost(context: Context) : AppWidgetHostView(context) {
+    var onError: () -> Unit = {}
+    private var failed = false
+
+    init {
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent) = false
+
+    // Shown when the layout fails to inflate, lay out or draw: the picker moves on to the next preview instead.
+    override fun getErrorView(): View = super.getErrorView().also {
+        if (!failed) onError()
+        failed = true
+    }
+}
+
+/** A picker entry: tapped with [onClick], or a header (TalkBack can jump between them) when that is null. */
+@Composable
+private fun PickerRow(icon: ImageBitmap?, label: String, checked: Boolean? = null, onClick: (() -> Unit)?) {
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .then(if (onClick == null) Modifier.semantics(mergeDescendants = true) { heading() } else Modifier.clickable(onClick = onClick))
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1129,7 +1342,7 @@ private fun NameDialog(l: Launcher, p: Popup.Rename) {
     AlertDialog(
         onDismissRequest = { l.popup = null },
         title = { DialogTitle(p.title) },
-        text = { OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), singleLine = true) },
+        text = { GatedHaptics(l) { OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), singleLine = true) } },
         confirmButton = {
             TextButton({
                 l.popup = null
@@ -1346,6 +1559,10 @@ private fun SettingsScreen(l: Launcher) {
                                 l.update { it.copy(doubleTap = app?.let { a -> Target.App(a.id) }) }
                             }
                         }) { layout.doubleTap?.let { Box(Modifier.padding(end = 8.dp)) { TargetIcon(l, it, 36.dp) } } }
+                        Header(stringResource(R.string.settings_general))
+                        SwitchRow(l, stringResource(R.string.haptics), stringResource(R.string.haptics_summary), layout.haptics) { on ->
+                            l.update { it.copy(haptics = on) }
+                        }
                     }
                     Section.BACKUP -> BackupSettings(l)
                 }
@@ -1368,7 +1585,8 @@ private fun MainList(l: Launcher, open: (Section) -> Unit) {
                     layout.tabs.joinToString(" · ") { it.name }
                 Section.DOCK -> pluralStringResource(R.plurals.count_icons, layout.dockSize, layout.dockSize) + " · " +
                     pluralStringResource(R.plurals.count_pages, layout.dock.size, layout.dock.size)
-                Section.GESTURES -> stringResource(R.string.settings_gestures_summary, l.labelOf(layout.doubleTap).replaceFirstChar { it.uppercase() })
+                Section.GESTURES -> stringResource(R.string.settings_gestures_summary, l.labelOf(layout.doubleTap).replaceFirstChar { it.uppercase() }) +
+                    " · " + stringResource(if (layout.haptics) R.string.haptics else R.string.haptics_off)
                 Section.BACKUP -> l.backupFolder?.let { stringResource(R.string.settings_backup_summary_weekly, folderName(l, it)) }
                     ?: stringResource(R.string.settings_backup_summary)
             }
@@ -1505,16 +1723,20 @@ private fun TabDialog(l: Launcher, i: Int, tab: Tab) {
     val onClose = { l.popup = null }
     var name by remember { mutableStateOf(tab.name) }
     var hide by remember { mutableStateOf(tab.hideApps) }
+    val haptic = rememberHaptic(l)
     AlertDialog(
         onDismissRequest = onClose,
         title = { DialogTitle(stringResource(R.string.drawer_tab)) },
         text = {
             Column {
-                OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), singleLine = true)
+                GatedHaptics(l) { OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), singleLine = true) }
                 if (tab.apps != null) {
                     Row(Modifier.padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(stringResource(R.string.drawer_hide_from_all_tabs), Modifier.weight(1f).padding(end = 16.dp), fontSize = 16.sp)
-                        Switch(hide, { hide = it })
+                        Switch(hide, {
+                            hide = it
+                            haptic(if (it) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
+                        })
                     }
                     // In the body and the accent, away from Listo: the one action here that loses something.
                     Row(
@@ -1556,14 +1778,10 @@ private fun TabDialog(l: Launcher, i: Int, tab: Tab) {
 private fun DockSettings(l: Launcher, layout: Layout) {
     Header(stringResource(R.string.settings_layout), divider = false)
     SettingRow(stringResource(R.string.dock_icons_per_page), stringResource(R.string.dock_icons_per_page_summary)) {
-        Stepper(layout.dockSize) { n -> l.update { it.withDockSize(n) } }
+        Stepper(l, layout.dockSize) { n -> l.update { it.withDockSize(n) } }
     }
-    SettingRow(
-        stringResource(R.string.dock_infinite_scroll),
-        stringResource(R.string.dock_infinite_scroll_summary),
-        { l.update { it.copy(dockWraps = !it.dockWraps) } },
-    ) {
-        Switch(layout.dockWraps, { wraps -> l.update { it.copy(dockWraps = wraps) } })
+    SwitchRow(l, stringResource(R.string.dock_infinite_scroll), stringResource(R.string.dock_infinite_scroll_summary), layout.dockWraps) { wraps ->
+        l.update { it.copy(dockWraps = wraps) }
     }
     Header(stringResource(R.string.settings_pages))
     layout.dock.forEachIndexed { i, icons ->
@@ -1600,12 +1818,21 @@ private fun BackupSettings(l: Launcher) {
     Header(stringResource(R.string.backup_automatic))
     val folder = l.backupFolder
     // The switch reads backupFolder, so cancelling the picker leaves it off; the row picks another folder.
+    // Only turning it off ticks: turning it on is up to the picker.
+    val haptic = rememberHaptic(l)
     SettingRow(
         stringResource(R.string.backup_weekly),
         folder?.let { stringResource(R.string.backup_weekly_in, folderName(l, it)) } ?: stringResource(R.string.backup_weekly_off),
         l::chooseBackupFolder,
     ) {
-        Switch(folder != null, { on -> if (on) l.chooseBackupFolder() else l.stopAutoBackup() })
+        Switch(folder != null, { on ->
+            if (on) {
+                l.chooseBackupFolder()
+            } else {
+                l.stopAutoBackup()
+                haptic(HapticFeedbackType.ToggleOff)
+            }
+        })
     }
     Header("Nova Launcher")
     SettingRow(stringResource(R.string.backup_import_nova), stringResource(R.string.backup_import_nova_summary), {
@@ -1641,6 +1868,17 @@ private fun SettingRow(title: String, summary: String? = null, onClick: (() -> U
     }
 }
 
+/** A row with a switch that ticks on or off after [onChange] (so turning haptics off is silent). Tapping the row flips it too. */
+@Composable
+private fun SwitchRow(l: Launcher, title: String, summary: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    val haptic = rememberHaptic(l)
+    val flip = { on: Boolean ->
+        onChange(on)
+        haptic(if (on) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
+    }
+    SettingRow(title, summary, { flip(!checked) }) { Switch(checked, flip) }
+}
+
 /** "Agregar …": an accent + so it reads as an action, not one more item. */
 @Composable
 private fun AddRow(title: String, onClick: () -> Unit) = SettingRow(title, onClick = onClick) { GlyphIcon(MORE, ACCENT, Modifier.padding(12.dp)) }
@@ -1656,9 +1894,14 @@ private fun Header(text: String, divider: Boolean = true) {
 
 /** Nova's − n + or, [vertical], + n −, within GRID_SIZES; SpaceBetween spreads it over a wider [modifier]. */
 @Composable
-private fun Stepper(value: Int, modifier: Modifier = Modifier, vertical: Boolean = false, onChange: (Int) -> Unit) {
-    val less = @Composable { IconAction(LESS, stringResource(R.string.stepper_fewer), enabled = value > GRID_SIZES.first) { onChange(value - 1) } }
-    val more = @Composable { IconAction(MORE, stringResource(R.string.stepper_more), enabled = value < GRID_SIZES.last) { onChange(value + 1) } }
+private fun Stepper(l: Launcher, value: Int, modifier: Modifier = Modifier, vertical: Boolean = false, onChange: (Int) -> Unit) {
+    val haptic = rememberHaptic(l)
+    val step = { n: Int ->
+        haptic(HapticFeedbackType.SegmentTick)
+        onChange(n)
+    }
+    val less = @Composable { IconAction(LESS, stringResource(R.string.stepper_fewer), enabled = value > GRID_SIZES.first) { step(value - 1) } }
+    val more = @Composable { IconAction(MORE, stringResource(R.string.stepper_more), enabled = value < GRID_SIZES.last) { step(value + 1) } }
     // A fixed box, so the buttons stay put between 9 and 10.
     val number = @Composable {
         Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { Text("$value", color = MaterialTheme.colorScheme.onSurface, fontSize = 16.sp) }
@@ -1704,9 +1947,9 @@ private fun GridDialog(l: Launcher, p: Popup.Grid) {
                 Row(verticalAlignment = Alignment.Bottom) {
                     Column(Modifier.weight(1f, fill = false).widthIn(max = 256.dp)) {
                         GridCells(c, r, Modifier.fillMaxWidth().aspectRatio(256f / 332f))
-                        Stepper(c, Modifier.fillMaxWidth().padding(top = 8.dp)) { c = it }
+                        Stepper(l, c, Modifier.fillMaxWidth().padding(top = 8.dp)) { c = it }
                     }
-                    Stepper(r, Modifier.padding(start = 16.dp, bottom = 56.dp), vertical = true) { r = it }
+                    Stepper(l, r, Modifier.padding(start = 16.dp, bottom = 56.dp), vertical = true) { r = it }
                 }
                 Text(note, Modifier.padding(top = 16.dp), textAlign = TextAlign.Center, style = MaterialTheme.typography.bodyMedium)
             }

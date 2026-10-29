@@ -40,8 +40,10 @@ A launcher sees every app you have and every app you open, so this one is built 
 - Long-press an item for its menu (app info and remove, plus "set up again" on a widget), or drag it to move it.
   Holding a dragged item at the side of the screen flips to the page on that side.
 - Long-press an empty spot to add a widget, change the wallpaper or open the settings.
-- Widgets come from a searchable picker that lists every provider. A widget takes the size its app asks for, fitted
-  to the grid, at the first free spot of the page. If it needs setup, its setup screen runs when you add it.
+- Widgets come from a searchable picker, grouped by app, that shows each widget's preview and size in cells. The
+  preview is the one its app generates (Android 15+, once the launcher may bind widgets), else its preview layout,
+  else its preview image. A widget takes the size its app asks for, fitted to the grid, at the first free spot of the
+  page. If it needs setup, its setup screen runs when you add it.
 - Gestures:
   - Swipe up opens the app drawer.
   - Swipe down opens the notification shade.
@@ -99,6 +101,9 @@ A launcher sees every app you have and every app you open, so this one is built 
   added and removed; removing one deletes its icons, after asking. The desktop and the dock take up to 20 pages each.
 - The drawer section reorders, renames and removes tabs, sets whether a picked tab leaves the all-apps tabs, and
   lists the hidden apps and the poisons to tick or untick.
+- Haptic feedback (on by default, switch in Settings → Gestures): a light vibration on long presses, drops (a
+  different one when there is no room), swipe gestures, the double tap and settings controls. The phone's own touch
+  vibration setting still applies.
 
 **Backups**
 

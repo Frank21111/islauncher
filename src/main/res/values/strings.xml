@@ -59,6 +59,7 @@
     <string name="widget_reconfigure">Set up again</string>
     <string name="widget_no_room">No room for this widget on the page</string>
     <string name="widget_app_missing">This widget\'s app is not installed</string>
+    <string name="widget_cells">%1$s wide by %2$s high</string>
 
     <!-- Dock -->
     <string name="dock_slot_taken">That dock slot is taken</string>
@@ -117,6 +118,10 @@
     <string name="settings_apps">Apps</string>
     <string name="gesture_double_tap">Double tap</string>
     <string name="gesture_pick_double_tap">On double tap</string>
+    <string name="settings_general">General</string>
+    <string name="haptics">Haptic feedback</string>
+    <string name="haptics_summary">A light vibration when you long press, drop an item, swipe or change a setting</string>
+    <string name="haptics_off">No haptic feedback</string>
     <string name="stepper_fewer">Fewer</string>
     <string name="stepper_more">More</string>
 

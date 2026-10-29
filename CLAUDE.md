@@ -29,7 +29,7 @@ picker must see non-exported widget receivers, which a `<queries>` block misses)
 
 - `Model.kt`: pure logic. `Layout` holds dock pages (`DockIcon`s: tap/up/down targets), desktop pages of `Item`s
   (icons and widgets on half cells), drawer tabs, hidden apps, the double-tap target and the settings: desktop and
-  drawer grids, dock icons per page, dock wrap-around. Every dock page keeps at least `dockSize` icons; those past
+  drawer grids, dock icons per page, dock wrap-around, haptics. Every dock page keeps at least `dockSize` icons; those past
   it stay saved, hidden. Shrinking the grid (`withGrid`) or removing a page (`withoutPage`) moves what no longer
   fits to the nearest free spot, else another page, else a new one: nothing is dropped. Also JSON persistence,
   `finder` (app lookup tolerant of launcher-alias changes), `tabApps`, `freeCell`, accent-insensitive search.
@@ -42,7 +42,9 @@ picker must see non-exported widget receivers, which a `<queries>` block misses)
 - `Ui.kt`: Compose UI. Desktop pager with icons and widgets (long press opens the item menu; dragging moves the
   item, drawn from its last frame, and holding it at a side flips the page), a wrap-around dock pager, Nova-style
   search pill. The drawer has search (with "Buscar con" providers), one swipeable page per tab and a fast scroller.
-  All menus and dialogs go through one `Popup` state, so `closeAll()` closes everything. Ajustes (desktop menu) is a
+  All menus and dialogs go through one `Popup` state, so `closeAll()` closes everything. Every vibration goes
+  through `rememberHaptic`, which checks `Layout.haptics` (so `combinedClickable` gets `hapticFeedbackEnabled = false`
+  and text fields sit in `GatedHaptics`, as they vibrate on their own when selecting text). Ajustes (desktop menu) is a
   full-screen overlay styled after Nova's settings (`novaColors()` greys the whole app's Material scheme; glyphs are
   Canvas line drawings, no icon library); it survives leaving (so the file pickers it opens come back to it) and
   closes on home. Home stays composed under it at alpha 0, so the clear preview strips show the wallpaper:

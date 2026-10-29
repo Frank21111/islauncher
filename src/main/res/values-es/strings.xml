@@ -61,6 +61,7 @@
     <string name="widget_reconfigure">Volver a configurar</string>
     <string name="widget_no_room">No hay lugar para este widget en la página</string>
     <string name="widget_app_missing">La app de este widget no está instalada</string>
+    <string name="widget_cells">%1$s de ancho por %2$s de alto</string>
 
     <!-- Dock -->
     <string name="dock_slot_taken">Ese lugar del dock está ocupado</string>
@@ -121,6 +122,10 @@
     <string name="settings_apps">Apps</string>
     <string name="gesture_double_tap">Doble toque</string>
     <string name="gesture_pick_double_tap">Al tocar dos veces</string>
+    <string name="settings_general">General</string>
+    <string name="haptics">Vibración</string>
+    <string name="haptics_summary">Una vibración suave cuando mantenés presionado, soltás un elemento, deslizás o cambiás un ajuste</string>
+    <string name="haptics_off">Sin vibración</string>
     <string name="stepper_fewer">Menos</string>
     <string name="stepper_more">Más</string>
 

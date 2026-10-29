@@ -4,6 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.text.Normalizer
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.pow
 
 /** Stable id of a launchable activity: "<flattened component>#<user serial number>". */
@@ -62,6 +63,8 @@ data class Layout(
     val drawerColumns: Int = 5,
     /** Rows on screen at once: they set the row height of the scrolling drawer. */
     val drawerRows: Int = 6,
+    /** Light vibrations on long presses, drops, swipes and settings; the system's touch feedback setting still rules. */
+    val haptics: Boolean = true,
 )
 
 fun <T> List<T>.replaced(index: Int, f: (T) -> T): List<T> = mapIndexed { i, x -> if (i == index) f(x) else x }
@@ -96,6 +99,13 @@ fun Layout.freeCell(page: Int, w: Float, h: Float): Cell? {
     }
     return null
 }
+
+/**
+ * The cells a new widget spans on one side: the [target] cells its app asks for, else its minimum size ([minDp])
+ * rounded up to half cells of [cellDp]; from half a cell to the grid's [max].
+ */
+fun widgetSpan(minDp: Float, target: Int, cellDp: Float, max: Int): Float =
+    (if (target > 0) target.toFloat() else ceil(minDp / cellDp * 2) / 2).coerceIn(0.5f, max.toFloat())
 
 fun Layout.fits(c: Cell) = c.w > 0 && c.h > 0 && c.x >= 0 && c.y >= 0 && c.x + c.w <= columns && c.y + c.h <= rows // NaN fails too
 
@@ -200,6 +210,7 @@ fun Layout.toJson(): String = JSONObject()
     .put("dockWraps", dockWraps)
     .put("drawerColumns", drawerColumns)
     .put("drawerRows", drawerRows)
+    .put("haptics", haptics)
     .toString()
 
 fun parseLayout(json: String): Layout {
@@ -231,6 +242,7 @@ fun parseLayout(json: String): Layout {
         dockWraps = root.optBoolean("dockWraps", true),
         drawerColumns = size("drawerColumns", 5),
         drawerRows = size("drawerRows", 6),
+        haptics = root.optBoolean("haptics", true),
     )
 }
 

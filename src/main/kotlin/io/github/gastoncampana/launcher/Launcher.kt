@@ -20,6 +20,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.drawable.Drawable
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Process
 import android.os.UserHandle
@@ -28,6 +29,7 @@ import android.provider.DocumentsContract
 import android.text.format.DateFormat
 import android.util.Log
 import android.view.ViewGroup
+import android.widget.RemoteViews
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -57,7 +59,7 @@ import java.text.SimpleDateFormat
 import java.time.LocalDate
 import java.util.Date
 import java.util.Locale
-import kotlin.math.ceil
+import kotlin.math.roundToInt
 
 private const val TAG = "Launcher"
 private const val LAYOUT_KEY = "layout"
@@ -402,11 +404,55 @@ class Launcher : ComponentActivity() {
         return host.createView(this, id, info).also { widgetViews[id] = it }
     }
 
+    /** The cells (width, height) a new widget of [info] takes, here and in the widget picker. */
+    fun widgetCells(info: AppWidgetProviderInfo): Pair<Float, Float> {
+        val density = resources.displayMetrics.density
+        return widgetSpan(info.minWidth / density, info.targetCellWidth, cellSize.width.value, layout.columns) to
+            widgetSpan(info.minHeight / density, info.targetCellHeight, cellSize.height.value, layout.rows)
+    }
+
+    /**
+     * The RemoteViews previews of [info], best first, as Launcher3 picks them: the one its app generated (Android 15+),
+     * then its preview layout. Blocking: call it off the main thread.
+     */
+    fun widgetPreviews(info: AppWidgetProviderInfo): List<RemoteViews> {
+        val home = AppWidgetProviderInfo.WIDGET_CATEGORY_HOME_SCREEN
+        // Only for a launcher allowed to bind widgets ("always allow" in the bind dialog); else it throws.
+        val generated = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM && info.generatedPreviewCategories and home != 0) {
+            try {
+                widgetManager.getWidgetPreview(info.provider, info.profile, home)
+            } catch (e: RuntimeException) {
+                null
+            }
+        } else {
+            null
+        }
+        val layout = if (info.previewLayout == 0) null else try {
+            RemoteViews(info.provider.packageName, info.previewLayout)
+        } catch (e: RuntimeException) {
+            null // its app was just removed
+        }
+        return listOfNotNull(generated, layout)
+    }
+
+    /** The preview image of [info], scaled to fit [width] × [height] px, or null. Blocking: call it off the main thread. */
+    fun widgetPreviewImage(info: AppWidgetProviderInfo, width: Int, height: Int): ImageBitmap? = try {
+        info.loadPreviewImage(this, 0)?.let { image ->
+            val w = image.intrinsicWidth.takeIf { it > 0 } ?: width
+            val h = image.intrinsicHeight.takeIf { it > 0 } ?: height
+            val scale = minOf(width.toFloat() / w, height.toFloat() / h) // up too, so a small vector stays sharp
+            image.toBitmap((w * scale).roundToInt().coerceAtLeast(1), (h * scale).roundToInt().coerceAtLeast(1)).asImageBitmap()
+        }
+    } catch (e: RuntimeException) {
+        Log.w(TAG, "Widget preview image failed", e)
+        null
+    } catch (e: OutOfMemoryError) { // an app's huge image must not take the home screen down
+        Log.w(TAG, "Widget preview image too big", e)
+        null
+    }
+
     fun addWidget(page: Int, info: AppWidgetProviderInfo) {
-        fun cells(px: Int, target: Int, cellDp: Float, max: Int): Float =
-            (if (target > 0) target.toFloat() else ceil(px / resources.displayMetrics.density / cellDp * 2) / 2).coerceIn(0.5f, max.toFloat())
-        val w = cells(info.minWidth, info.targetCellWidth, cellSize.width.value, layout.columns)
-        val h = cells(info.minHeight, info.targetCellHeight, cellSize.height.value, layout.rows)
+        val (w, h) = widgetCells(info)
         val cell = layout.freeCell(page, w, h) ?: return toast(getString(R.string.widget_no_room))
         val placeholder = Item.Widget(info.provider.flattenToString(), 0, cell)
         updatePage(page) { it + placeholder }
@@ -579,7 +625,7 @@ class Launcher : ComponentActivity() {
 
     fun restoreBackup() = openBackup.launch(arrayOf("application/json", "application/octet-stream", "text/plain"))
 
-    // --- Nova import: a .novabackup replaces the layout; the venenos, which Nova lacks, stay ---
+    // --- Nova import: a .novabackup replaces the layout; the venenos (which Nova lacks) and the vibration setting stay ---
 
     private val pickNova = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@registerForActivityResult
@@ -590,7 +636,7 @@ class Launcher : ComponentActivity() {
                 Log.w(TAG, "Nova import failed", e)
                 return@launch toast(getString(R.string.backup_nova_read_failed))
             }
-            replaceLayout(imported.restored(emptyMap()).copy(poisons = layout.poisons))
+            replaceLayout(imported.restored(emptyMap()).copy(poisons = layout.poisons, haptics = layout.haptics))
             toast(getString(R.string.backup_nova_imported))
         }
     }
