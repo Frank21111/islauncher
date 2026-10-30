@@ -130,7 +130,7 @@ object Layouts {
 
 /** Where a shortcut's icon is kept: shortcuts cannot be queried until this is the default home app. */
 fun Context.shortcutIconFile(t: Target.Shortcut) =
-    File(filesDir, "shortcut-" + "${t.pkg}-${t.id}".replace(Regex("[^A-Za-z0-9._-]"), "_") + ".png")
+    File(filesDir, "shortcut-" + "${t.pkg}-${t.id}".replace(Regex("[^A-Za-z0-9._-]"), "_").take(242) + ".png") // 255 bytes at most
 
 fun Context.toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
 
@@ -497,8 +497,12 @@ class Launcher : ComponentActivity() {
         false
     }
 
-    fun shortcutIcon(target: Target.Shortcut): ImageBitmap? =
-        shortcutIconFile(target).takeIf { it.exists() }?.let { BitmapFactory.decodeFile(it.path)?.asImageBitmap() }
+    fun shortcutIcon(target: Target.Shortcut): ImageBitmap? {
+        val path = shortcutIconFile(target).takeIf { it.exists() }?.path ?: return null
+        val size = BitmapFactory.Options().apply { inJustDecodeBounds = true }.also { BitmapFactory.decodeFile(path, it) }
+        val sampled = BitmapFactory.Options().apply { inSampleSize = iconSample(size.outWidth, size.outHeight) }
+        return BitmapFactory.decodeFile(path, sampled)?.asImageBitmap()
+    }
 
     /**
      * The shortcuts [app]'s menu lists ("New message", recent chats; see [menuShortcuts]), with icons [iconPx] square.
@@ -835,7 +839,7 @@ class Launcher : ComponentActivity() {
             } catch (e: Exception) { // not a backup of this launcher, or unreadable
                 Log.w(TAG, "Restore failed", e)
                 toast(getString(R.string.backup_read_failed))
-            } catch (e: StackOverflowError) { // deeply nested JSON
+            } catch (e: VirtualMachineError) { // deeply nested or crafted JSON
                 Log.w(TAG, "Restore failed", e)
                 toast(getString(R.string.backup_read_failed))
             }
@@ -918,8 +922,11 @@ class Launcher : ComponentActivity() {
             } catch (e: Exception) { // not a Nova backup, or an unreadable one
                 Log.w(TAG, "Nova import failed", e)
                 return@launch toast(getString(R.string.backup_nova_read_failed))
+            } catch (e: OutOfMemoryError) { // a crafted archive: only the import is lost
+                Log.w(TAG, "Nova import failed", e)
+                return@launch toast(getString(R.string.backup_nova_read_failed))
             }
-            replaceLayout(imported.restored(emptyMap()).copy(poisons = layout.poisons, haptics = layout.haptics, instead = layout.instead, decimal = layout.decimal, hideSuspended = layout.hideSuspended))
+            replaceLayout(imported.copy(poisons = layout.poisons, haptics = layout.haptics, instead = layout.instead, decimal = layout.decimal, hideSuspended = layout.hideSuspended))
             toast(getString(R.string.backup_nova_imported))
         }
     }

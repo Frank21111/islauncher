@@ -329,9 +329,11 @@ fun Layout.resized(page: Int, item: Item, cell: Cell): Layout {
 
 /**
  * A layout read from a backup file. Widgets whose id is not one of this install's ([live], id to provider) for
- * the same provider become placeholders to set up again; items off the grid are dropped.
+ * the same provider become placeholders to set up again; items off the grid are dropped. Throws on a layout no real
+ * one comes near: it would be saved, and then fail on every start.
  */
 fun Layout.restored(live: Map<Int, String?>): Layout {
+    require(withinBudget()) { "Not a layout this app could have saved" }
     // Every page stays composed, so a file with thousands would make each start run out of memory.
     val pages = desktop.take(MAX_PAGES).map { page ->
         page.filter { fits(it.cell) }
@@ -340,8 +342,39 @@ fun Layout.restored(live: Map<Int, String?>): Layout {
     return copy(dock = dock.take(MAX_PAGES), desktop = pages, defaultPage = defaultPage.takeIf { it in pages.indices } ?: 0)
 }
 
+private fun Layout.withinBudget(): Boolean {
+    val items = desktop.flatten()
+    val targets = listOfNotNull(doubleTap, instead) + items.filterIsInstance<Item.Icon>().map { it.target } +
+        dock.flatten().flatMap { listOfNotNull(it.tap, it.up, it.down) }
+    val texts = targets.flatMap {
+        when (it) {
+            is Target.App -> listOf(it.id)
+            is Target.Shortcut -> listOf(it.pkg, it.id, it.label)
+        }
+    } + items.map {
+        when (it) {
+            is Item.Icon -> it.label
+            is Item.Widget -> it.provider
+        }
+    } + tabs.map { it.name } + tabs.flatMap { it.apps.orEmpty() } + hidden + poisons
+    return items.size <= MAX_ITEMS && tabs.size <= MAX_TABS && dock.all { it.size <= GRID_SIZES.last } &&
+        texts.size <= MAX_TEXTS && texts.all { it.length <= MAX_TEXT }
+}
+
 /** Most desktop or dock pages a restored backup keeps. */
 const val MAX_PAGES = 20
+
+/** What a restored backup may hold, past any real layout: desktop items (the largest grid, full, on every page), drawer tabs, labels and ids, and the length of one. */
+const val MAX_ITEMS = 2880
+const val MAX_TABS = 200
+const val MAX_TEXTS = 20_000
+const val MAX_TEXT = 4096
+
+/** Widest side a saved shortcut icon is decoded to, in px. */
+private const val MAX_ICON_PX = 512
+
+/** The BitmapFactory sample size that brings a [width] × [height] px icon within [MAX_ICON_PX]: an imported one can be any size. */
+fun iconSample(width: Int, height: Int) = generateSequence(1) { it * 2 }.first { maxOf(width, height) / it <= MAX_ICON_PX }
 
 /**
  * Whether Ajustes opens on its guide by itself: on a fresh install's first launch, while no layout is [saved] (any

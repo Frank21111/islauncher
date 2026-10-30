@@ -5,6 +5,7 @@ import io.github.gastoncampana.launcher.Target.Shortcut
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -352,6 +353,41 @@ class ModelTest {
         val capped = huge.restored(emptyMap())
         assertEquals(MAX_PAGES to MAX_PAGES, capped.dock.size to capped.desktop.size)
         assertEquals(0, capped.defaultPage)
+    }
+
+    @Test
+    fun restoredRejectsABackupPastAnyRealLayout() {
+        val icon = Item.Icon(App("a/a.A#0"), "A", Cell(0f, 0f))
+        val long = "x".repeat(MAX_TEXT + 1)
+        val full = Layout(
+            desktop = List(2) { List(MAX_ITEMS / 2) { icon } },
+            tabs = List(MAX_TABS) { Tab("x".repeat(MAX_TEXT)) },
+            dock = listOf(List(GRID_SIZES.last) { DockIcon() }),
+        )
+        assertEquals(MAX_ITEMS, full.restored(emptyMap()).desktop.flatten().size)
+        listOf(
+            Layout(desktop = List(2) { List(MAX_ITEMS / 2 + 1) { icon } }),
+            Layout(tabs = List(MAX_TABS + 1) { Tab("t") }),
+            Layout(dock = listOf(List(GRID_SIZES.last + 1) { DockIcon() })),
+            Layout(desktop = listOf(listOf(icon.copy(label = long)))),
+            Layout(desktop = listOf(listOf(Item.Widget(long, 0, Cell(0f, 0f))))),
+            Layout(tabs = listOf(Tab(long))),
+            Layout(tabs = listOf(Tab("t", setOf(long)))),
+            Layout(hidden = setOf(long)),
+            Layout(hidden = (0..MAX_TEXTS).map { "$it" }.toSet()),
+            Layout(poisons = setOf(long)),
+            Layout(doubleTap = Shortcut("p", long, "l")),
+            Layout(instead = App(long)),
+            Layout(dock = listOf(listOf(DockIcon(down = Shortcut("p", "s", long))))),
+        ).forEach { hostile -> assertThrows(IllegalArgumentException::class.java) { hostile.restored(emptyMap()) } }
+    }
+
+    @Test
+    fun iconSampleShrinksOnlyWhatIsTooBig() {
+        assertEquals(1, iconSample(192, 192))
+        assertEquals(1, iconSample(-1, -1)) // not an image
+        assertEquals(2, iconSample(1024, 10))
+        assertEquals(128, iconSample(65535, 65535))
     }
 
     @Test

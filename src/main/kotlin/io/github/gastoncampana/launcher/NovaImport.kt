@@ -51,7 +51,7 @@ fun readNovaBackup(context: Context, uri: Uri, user: Long): Layout {
             val tabs = sql.rows("select _id, title, groupType, tabOrder, hideApps from drawer_groups") {
                 NovaTab(getString(1).orEmpty(), getString(2).orEmpty(), getInt(3), getInt(4) != 0, members[getLong(0)].orEmpty())
             }
-            val layout = novaLayout(favorites, tabs, members[-1L].orEmpty(), prefs!!, user)
+            val layout = novaLayout(favorites, tabs, members[-1L].orEmpty(), prefs!!, user).restored(emptyMap())
             // Only once the whole backup read fine: a failed import must not change the icons of the current layout.
             icons.forEach { (target, png) -> context.shortcutIconFile(target).writeBytes(png) }
             return layout
