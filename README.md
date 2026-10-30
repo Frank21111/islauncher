@@ -1,14 +1,67 @@
-# Launcher
+<p align="center">
+  <img src="docs/icon.svg" width="112" height="112" alt="Islauncher icon">
+</p>
 
-A private home-screen app for Android 13 and newer, inspired by Nova Launcher. It has no network permission at all,
-so it cannot send anything over the network.
+<h1 align="center">Islauncher</h1>
 
-It is not affiliated with or endorsed by Nova Launcher or its developers. It is written in Kotlin with Jetpack Compose
-and depends only on AndroidX (Compose Material 3, Activity, Core), with no analytics, crash reporting or accounts.
+<p align="center">
+  <strong>The home screen that sees every app you open, and has no way to tell anyone.</strong><br>
+  Nova-style control for Android 13 and newer, with no network permission at all.
+</p>
 
-The app is available in English and Spanish. It follows the system language, or the language picked for it in
-Android's per-app language settings (Settings → System → Languages → App languages, or the app's info page; the
-names vary by phone).
+<p align="center">
+  <a href="https://github.com/gastoncampana/islauncher/releases/latest"><img src="https://img.shields.io/github/v/release/gastoncampana/islauncher?label=download&color=D64526" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/Android-13%2B-3a3a3a" alt="Android 13 or newer">
+  <img src="https://img.shields.io/badge/INTERNET_permission-none-3a3a3a" alt="No INTERNET permission">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3a3a3a" alt="MIT license"></a>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/home.png" width="31%" alt="Home screen with a clock widget, app icons and the dock">
+  <img src="docs/screenshots/drawer.png" width="31%" alt="App drawer with tabs">
+  <img src="docs/screenshots/search.png" width="31%" alt="Search answering a unit conversion">
+</p>
+<p align="center">
+  <img src="docs/screenshots/pause.png" width="31%" alt="The pause before a poison app opens">
+  <img src="docs/screenshots/widgets.png" width="31%" alt="Widget picker with previews">
+  <img src="docs/screenshots/guide.png" width="31%" alt="The feature guide in Settings">
+</p>
+
+## Why Islauncher
+
+A launcher knows which apps you have, which you open and when. Islauncher ships without Android's INTERNET
+permission, so that knowledge has nowhere to go: no analytics, no crash reporting, no accounts. You can
+[check any build yourself](#privacy).
+
+- **Your layout, your way.** Desktop pages on a half-cell grid, a swipeable dock, drawer tabs, gestures, widgets you
+  resize with a frame, and items you throw off the screen to remove.
+- **Search that answers.** Sums, percentages and offline unit conversion. Phone numbers, links and e-mail addresses
+  become actions. Apps you use more rise to the top, and that score never leaves the phone.
+- **Poisons.** Mark the apps that eat your time, and they open only after a pause that grows with each open that day.
+- **Move in from Nova.** Import a `.novabackup` with your pages, dock, tabs and hidden apps.
+- **Backups stay on the phone.** Save the layout by hand or weekly, to local storage only.
+- **Nothing to discover by accident.** Settings → Guide shows what every part of the app can do.
+
+Available in English and Spanish. It follows the system language, or the language picked for it in Android's per-app
+language settings (Settings → System → Languages → App languages, or the app's info page; the names vary by phone).
+
+## Install
+
+1. Download `islauncher-<version>.apk` from the [latest release](https://github.com/gastoncampana/islauncher/releases/latest).
+2. Open it on the phone and allow installs from that app when Android asks. Play Protect may warn you, because the app
+   does not come from Google Play.
+3. Press Home and pick Islauncher, then "Always". The launcher's own settings also have a row for this.
+
+Moving from Nova? Export a backup there, then import it from Settings → Backup in Islauncher.
+
+**Verify the download (optional).** Each release lists the APK's SHA-256. Every published APK is signed with the same
+key, whose certificate has this SHA-256 fingerprint:
+
+```text
+47:CE:49:C4:FB:CA:EC:15:54:92:77:5B:3E:18:05:F4:E0:EF:29:C3:B0:00:EB:39:53:4E:22:DF:8C:04:E9:8F
+```
+
+Compare it with `apksigner verify --print-certs islauncher-<version>.apk`, which prints it without the colons.
 
 ## Privacy
 
@@ -18,9 +71,8 @@ A launcher sees every app you have and every app you open, so this one is built 
   `tools:node="remove"`, which strips it from the merged manifest even when a library asks for it. Without that
   permission Android gives the app no network sockets.
 - **Check any build yourself:**
-  `apkanalyzer manifest permissions build/outputs/apk/release/launcher-release.apk` (apkanalyzer comes with the
-  Android SDK command-line tools). It lists the four permissions under [Permissions](#permissions), and INTERNET
-  is not one of them.
+  `apkanalyzer manifest permissions islauncher-<version>.apk` (apkanalyzer comes with the Android SDK command-line
+  tools). It lists the four permissions under [Permissions](#permissions), and INTERNET is not one of them.
 - **No cloud backup.** `android:allowBackup="false"` keeps the app's data out of Android's cloud backup. Since
   Android 12 that setting does not stop a device-to-device transfer, so setting up a new phone from this one can
   copy the layout across.
@@ -51,7 +103,8 @@ A launcher sees every app you have and every app you open, so this one is built 
 
 ## Features
 
-**Home screen**
+<details>
+<summary><strong>Home screen</strong></summary>
 
 - Desktop pages with apps, shortcuts and widgets on a grid that places items in half-cell steps.
 - Long-press an item for its menu (an app's shortcuts, app info, uninstall and remove, plus "resize" and "set up
@@ -89,7 +142,10 @@ A launcher sees every app you have and every app you open, so this one is built 
   the pause ends. Search still shows them, greyed out, and one dragged from there is placed out of sight, with a
   message saying so.
 
-**Dock**
+</details>
+
+<details>
+<summary><strong>Dock</strong></summary>
 
 - Several dock pages, which wrap around from the last page to the first (you can turn that off).
 - Each icon opens one app on tap and can open other apps on a swipe up or down. Long-press a slot for its menu: the
@@ -98,7 +154,10 @@ A launcher sees every app you have and every app you open, so this one is built 
   the notification shade, as a swipe does elsewhere on the home screen.
 - Drop an app from the drawer or the desktop onto an empty dock slot.
 
-**App drawer**
+</details>
+
+<details>
+<summary><strong>App drawer and search</strong></summary>
 
 - Tabs, swiped sideways like pages:
   - an all-apps tab, plus tabs of apps you pick
@@ -129,7 +188,10 @@ A launcher sees every app you have and every app you open, so this one is built 
 - Each app's menu lists its shortcuts and can add it to the desktop, toggle its tabs, hide it, mark it as a poison,
   open its app info or uninstall it (not a system app). You can also drag an app onto the desktop or the dock.
 
-**Poisons**
+</details>
+
+<details>
+<summary><strong>Poisons</strong></summary>
 
 - Apps you mark as poisons open only after a pause: 10 seconds, plus 5 seconds for each time you already opened that
   app today. The pause screen shows today's count, and "go back" is the main button.
@@ -138,7 +200,10 @@ A launcher sees every app you have and every app you open, so this one is built 
 - The pause applies to every way the launcher opens an app: the drawer, desktop and dock icons, swipes, double tap,
   shortcuts on the desktop and in app menus, search providers and the search bar buttons.
 
-**Shortcuts**
+</details>
+
+<details>
+<summary><strong>Shortcuts</strong></summary>
 
 - An app's menu (long-press it on the desktop, in the dock or in the drawer) starts with up to four of its shortcuts,
   as in Nova, such as "New message", a recent chat or "Scan QR code". Tap one to open it, or its + to add it to the
@@ -149,7 +214,10 @@ A launcher sees every app you have and every app you open, so this one is built 
   the first page with room.
 - Shortcuts carry the badge of their app, except browser shortcuts, which come with a badge of their own.
 
-**Settings**
+</details>
+
+<details>
+<summary><strong>Settings</strong></summary>
 
 - Settings → Guide lists what the app can do, part by part, each entry with how to do it; an entry with settings of
   its own opens them. It opens by itself once, on the first launch of a fresh install, and never for a layout already
@@ -185,7 +253,10 @@ A launcher sees every app you have and every app you open, so this one is built 
   settings controls. The phone's own touch
   vibration setting still applies.
 
-**Backups**
+</details>
+
+<details>
+<summary><strong>Backups</strong></summary>
 
 - Manual backups: save the whole layout (desktop, dock, tabs, hidden apps, poisons and settings) to a JSON file, or
   restore it from one. Restoring replaces the current layout.
@@ -201,15 +272,13 @@ A launcher sees every app you have and every app you open, so this one is built 
   Your poisons, the app the pause offers instead, the haptic feedback setting, the number format and the paused apps
   setting are kept.
 
-## Requirements
+</details>
 
-- **To run:** Android 13 (API 33) or newer.
-- **To build:**
-  - JDK 21. It has to be a full JDK, because the build needs `javac` and a JRE alone fails.
-  - The Android SDK with platform 37 (compileSdk and targetSdk are 37).
-  - Gradle comes with the wrapper.
+## Building from source
 
-## Building
+The app is written in Kotlin with Jetpack Compose and depends only on AndroidX (Compose Material 3, Activity, Core).
+You need JDK 21 (a full JDK, because the build needs `javac`) and the Android SDK with platform 37. Gradle comes with
+the wrapper.
 
 1. Point the build at the SDK, either with `ANDROID_HOME` or with `sdk.dir` in `local.properties`. Android Studio
    writes that file, and git ignores it.
@@ -217,35 +286,22 @@ A launcher sees every app you have and every app you open, so this one is built 
 3. Run the build or the tests:
 
 ```sh
-./gradlew assembleRelease     # writes build/outputs/apk/release/launcher-release.apk
+./gradlew assembleRelease     # writes build/outputs/apk/release/islauncher-release.apk
 ./gradlew testDebugUnitTest   # unit tests: layout model, search and its answers, Nova converter
 ```
 
 The build downloads Gradle and the dependencies. The app it produces has no network access.
 
-**Signing:** release builds are minified with R8 and signed on purpose with the debug key of the machine that
-builds them. That key is `~/.android/debug.keystore`, which the Android build tools create on first use. It spares a
-sideloaded personal app any key management, and it means:
+**Signing:** release builds are minified with R8. Without the key of the published APKs, they are signed with your
+machine's debug key (`~/.android/debug.keystore`, which the Android build tools create on first use). That means:
 
-- **A build made on your machine is signed with your key.** Android installs an update only over an app signed with
-  the same key. You cannot update an install that came from someone else's build without uninstalling it first. The
-  same goes for your own installs if you lose that keystore.
+- **A build of your own does not update a published APK, or the reverse.** Android installs an update only over an
+  app signed with the same key, so switching means uninstalling first.
 - **Uninstalling wipes the layout.** Save a backup first and restore it after reinstalling. Pinned shortcuts do not
   come back that way (see [Known limitations](#known-limitations)).
-- **To distribute APKs,** give the release build type a signing config with a key of your own.
 
-## Installing
-
-**First install:**
-
-```sh
-./gradlew assembleRelease
-adb install build/outputs/apk/release/launcher-release.apk
-```
-
-You can also copy the APK to the phone and open it there, allowing installs from that app when Android asks.
-
-**Updates,** with USB debugging on and the phone connected:
+To put your own build on a phone for the first time, run `adb install build/outputs/apk/release/islauncher-release.apk`.
+For updates, with USB debugging on and the phone connected:
 
 ```sh
 scripts/install.sh
@@ -262,7 +318,7 @@ does not stop the app first, so it can lose the choice.
 
 ## Making it the default home app
 
-- Press Home and pick Launcher, then "Always".
+- Press Home and pick Islauncher, then "Always".
 - Or go to Settings → Apps → Default apps → Home app. The names vary by manufacturer.
 - The launcher's own settings (long-press an empty spot on the desktop) have a row that opens that system screen.
 
@@ -340,8 +396,9 @@ Kotlin sources are in `src/main/kotlin/io/github/gastoncampana/launcher/`, and t
 | `Ui.kt` | The Compose UI: desktop, dock, search bar, drawer, menus and dialogs, the pause screen and the settings. |
 | `ModelTest.kt`, `NovaTest.kt` | Unit tests for the model and the Nova converter. |
 | `scripts/install.sh` | Builds and installs an update over adb without losing the default home choice. |
+| `scripts/release.sh` | Builds the APK for a release: runs the tests and checks the signature and the permissions. |
 | `CLAUDE.md` | Invariants and architecture notes for contributors and coding agents. |
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE). Islauncher is not affiliated with or endorsed by Nova Launcher or its developers.
