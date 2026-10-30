@@ -11,6 +11,9 @@
     <!-- Swipe down opens the notification shade. -->
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
 
+    <!-- "Desinstalar" in app menus. Android still asks before removing anything. -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+
     <!-- A launcher has to see every app: launcher icons, and widget providers whose receiver is not
          exported (a <queries> intent misses those). Harmless here: nothing can leave the device. -->
     <uses-permission

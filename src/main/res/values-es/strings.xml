@@ -44,6 +44,10 @@
     <string name="open_target_assistant">el asistente</string>
     <string name="open_target_calendar">el calendario</string>
     <string name="open_target_settings">los ajustes</string>
+    <string name="open_target_phone">el teléfono</string>
+    <string name="open_target_messages">los mensajes</string>
+    <string name="open_target_link">el enlace</string>
+    <string name="open_target_email">el correo</string>
 
     <!-- What an icon or gesture opens, in "Tocar: nada" and "Doble toque: Nada" -->
     <string name="target_none">nada</string>
@@ -56,8 +60,13 @@
     <!-- Home screen -->
     <string name="desktop_no_room_page">No hay lugar en esta página</string>
     <string name="desktop_no_room_main">No hay lugar en la página principal</string>
+    <string name="desktop_no_room_page_n">No hay lugar en la página %1$d</string>
+    <string name="desktop_rename_icon">Renombrar ícono</string>
+    <string name="desktop_move_to_page">Mover a otra página</string>
     <string name="menu_wallpaper">Fondo de pantalla</string>
     <string name="menu_app_info">Info de la app</string>
+    <string name="uninstall">Desinstalar</string>
+    <string name="uninstall_failed">No se pudo desinstalar %1$s</string>
     <string name="widget_add">Agregar widget</string>
     <string name="widget_reconfigure">Volver a configurar</string>
     <string name="widget_no_room">No hay lugar para este widget en la página</string>
@@ -66,6 +75,8 @@
 
     <!-- Dock -->
     <string name="dock_slot_taken">Ese lugar del dock está ocupado</string>
+    <string name="dock_slot_paused">Ese lugar del dock es de %1$s, que está pausada</string>
+    <string name="paused_placed">%1$s está pausada: aparece cuando se reanude</string>
     <string name="dock_tap">Tocar: %1$s</string>
     <string name="dock_swipe_up">Deslizar ↑: %1$s</string>
     <string name="dock_swipe_down">Deslizar ↓: %1$s</string>
@@ -77,6 +88,14 @@
     <string name="search_apps_hint">Buscar aplicaciones…</string>
     <string name="search_with">Buscar con</string>
     <string name="search_calc_result">Resultado</string>
+    <string name="search_us_cup">Taza de EE. UU.: %1$s ml</string>
+    <string name="answer_phone">Número de teléfono</string>
+    <string name="answer_link">Enlace</string>
+    <string name="answer_email">Dirección de correo</string>
+    <string name="answer_call">Llamar</string>
+    <string name="answer_sms">Enviar SMS</string>
+    <string name="answer_open">Abrir</string>
+    <string name="answer_write">Escribir</string>
     <string name="drawer_rename_tab">Renombrar pestaña</string>
     <string name="drawer_new_tab">Nueva pestaña</string>
     <string name="drawer_show_app">Mostrar en el cajón</string>
@@ -151,6 +170,36 @@
         <item quantity="other">Se suman %d páginas.</item>
     </plurals>
 
+    <string name="tidy">Ordenar</string>
+    <string name="tidy_all_clear">Todo en orden</string>
+    <string name="tidy_all_clear_summary">Nada roto, repetido ni vacío</string>
+    <plurals name="tidy_summary">
+        <item quantity="one">%d cosa para revisar</item>
+        <item quantity="many">%d cosas para revisar</item>
+        <item quantity="other">%d cosas para revisar</item>
+    </plurals>
+    <string name="tidy_broken">Rotos</string>
+    <string name="tidy_remove_broken">Quitar todo lo roto</string>
+    <string name="tidy_remove_broken_summary">Los repetidos y las páginas vacías quedan</string>
+    <plurals name="tidy_remove_broken_text">
+        <item quantity="one">Se quita %d elemento cuya app o widget ya no está.</item>
+        <item quantity="many">Se quitan %d elementos cuya app o widget ya no está.</item>
+        <item quantity="other">Se quitan %d elementos cuya app o widget ya no está.</item>
+    </plurals>
+    <string name="tidy_twins">Repetidos</string>
+    <string name="tidy_empty_pages">Páginas vacías</string>
+    <!-- Where something is in the dock: "Dock 1 · ícono 3", then "· deslizar ↑" for what a swipe opens -->
+    <string name="tidy_dock">Dock %1$d · ícono %2$d</string>
+    <string name="tidy_swipe">deslizar %1$s</string>
+    <!-- A widget whose app is gone, named by its package -->
+    <string name="tidy_widget">Widget de %1$s</string>
+    <!-- Apps Focus mode or a Digital Wellbeing limit paused -->
+    <string name="paused_apps">Apps pausadas</string>
+    <string name="paused_dim">Atenuar</string>
+    <string name="paused_hide">Ocultar</string>
+    <string name="paused_dim_summary">Atenuar: quedan en gris donde están</string>
+    <string name="paused_hide_summary">Ocultar: fuera del escritorio, el dock y las pestañas, con su lugar guardado, hasta que se reanuden; la búsqueda las muestra</string>
+
     <string name="drawer_grid">Grilla del cajón</string>
     <string name="drawer_grid_note">Las filas son las que entran en pantalla; marcan su alto.</string>
     <string name="settings_tabs">Pestañas</string>
@@ -158,6 +207,7 @@
     <string name="drawer_tab_all_apps">Todas las apps</string>
     <string name="drawer_tab_hides_apps">fuera de las demás</string>
     <string name="drawer_add_tab">Agregar pestaña</string>
+    <string name="drawer_pick_apps">Elegir apps</string>
     <string name="drawer_hide_from_all_tabs">Sacar sus apps de las pestañas de todas</string>
     <string name="drawer_remove_tab">Quitar pestaña</string>
     <string name="drawer_remove_tab_title">Quitar «%1$s»</string>
@@ -168,6 +218,26 @@
     <string name="poison_instead">En vez de un veneno</string>
     <string name="poison_instead_none">Una app que la pausa te ofrece en su lugar</string>
     <string name="poison_pick_instead">Ofrecer en vez de un veneno</string>
+    <string name="settings_search">Búsqueda</string>
+    <string name="search_numbers">Formato de números</string>
+    <string name="search_numbers_auto">Automático (%1$s)</string>
+    <string name="unused">Sin abrir hace tiempo</string>
+    <string name="unused_ready_on">Lista el %1$s</string>
+    <string name="unused_none">Ninguna</string>
+    <plurals name="unused_note">
+        <item quantity="one">Apps que no abriste desde Launcher en %d día y que instalaste hace al menos ese tiempo, sin las del sistema, los venenos ni las que tienen un widget en el escritorio. Launcher no ve lo que abrís desde una notificación, desde Recientes o desde un enlace en otra app, así que son solo candidatas.</item>
+        <item quantity="many">Apps que no abriste desde Launcher en %d días y que instalaste hace al menos ese tiempo, sin las del sistema, los venenos ni las que tienen un widget en el escritorio. Launcher no ve lo que abrís desde una notificación, desde Recientes o desde un enlace en otra app, así que son solo candidatas.</item>
+        <item quantity="other">Apps que no abriste desde Launcher en %d días y que instalaste hace al menos ese tiempo, sin las del sistema, los venenos ni las que tienen un widget en el escritorio. Launcher no ve lo que abrís desde una notificación, desde Recientes o desde un enlace en otra app, así que son solo candidatas.</item>
+    </plurals>
+    <string name="unused_waiting">Todavía no</string>
+    <string name="unused_waiting_text">Launcher cuenta las aperturas desde el %1$s. La lista va a estar lista el %2$s.</string>
+    <plurals name="unused_none_summary">
+        <item quantity="one">Todas se abrieron o se instalaron en el último %d día</item>
+        <item quantity="many">Todas se abrieron o se instalaron en los últimos %d días</item>
+        <item quantity="other">Todas se abrieron o se instalaron en los últimos %d días</item>
+    </plurals>
+    <string name="unused_last_open">Abierta por última vez el %1$s</string>
+    <string name="unused_no_opens">Sin aperturas registradas</string>
 
     <string name="dock_icons_per_page">Íconos por página</string>
     <string name="dock_icons_per_page_summary">Los que sobren se guardan hasta que vuelva a haber lugar</string>
@@ -190,7 +260,7 @@
     <string name="backup_chosen_folder">la carpeta elegida</string>
     <string name="backup_import_nova">Importar de Nova</string>
     <string name="backup_import_nova_summary">Desde un archivo .novabackup</string>
-    <string name="backup_import_nova_text">Reemplaza el escritorio, el dock, las pestañas, las apps ocultas y las grillas; los venenos y la app que ofrece la pausa quedan. Los widgets se vuelven a configurar tocándolos.</string>
+    <string name="backup_import_nova_text">Reemplaza el escritorio, el dock, las pestañas, las apps ocultas y las grillas; los venenos, la app que ofrece la pausa, la vibración, el formato de números y cómo se ven las apps pausadas quedan. Los widgets se vuelven a configurar tocándolos.</string>
     <string name="backup_saved">Copia guardada</string>
     <string name="backup_save_failed">No se pudo guardar la copia</string>
     <string name="backup_restored">Copia restaurada</string>

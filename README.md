@@ -19,7 +19,7 @@ A launcher sees every app you have and every app you open, so this one is built 
   permission Android gives the app no network sockets.
 - **Check any build yourself:**
   `apkanalyzer manifest permissions build/outputs/apk/release/launcher-release.apk` (apkanalyzer comes with the
-  Android SDK command-line tools). It lists the three permissions under [Permissions](#permissions), and INTERNET
+  Android SDK command-line tools). It lists the four permissions under [Permissions](#permissions), and INTERNET
   is not one of them.
 - **No cloud backup.** `android:allowBackup="false"` keeps the app's data out of Android's cloud backup. Since
   Android 12 that setting does not stop a device-to-device transfer, so setting up a new phone from this one can
@@ -27,17 +27,24 @@ A launcher sees every app you have and every app you open, so this one is built 
 - **Layout backups stay local.** Manual and weekly backups are written through the system file picker with
   `EXTRA_LOCAL_ONLY`, so cloud providers are not offered as a destination. A local folder that another app syncs
   is still synced by that app.
-- **"Search with" hands your query to the app you tap.** The launcher itself sends nothing.
-- **An app you open from its icon learns where the icon was.** As every launcher does, this one passes the icon's
-  position on screen to the app (Android's source bounds), so the app can animate from it. Nothing else is passed on.
+- **"Search with" hands your query to the app you tap.** The launcher itself sends nothing. So do the actions
+  search offers on a phone number, link or e-mail address: the number, link or address goes to the app you tap,
+  and nothing you type is stored.
+- **The number format reads the phone's country.** Set to automatic, it takes the country of the SIM card, else of
+  the mobile network, else of the language settings. Android gives that without a permission, and it stays on the
+  device.
+- **Opening an app passes it nothing about the launcher.** No icon position (Android's source bounds) and no
+  animation options go with it.
 - **App shortcuts are read only to show them.** Each time an app's menu opens, it asks Android for that app's
   shortcuts, which can name recent chats, and keeps none of them. A shortcut you add to the home screen keeps its
   label and icon, as any pinned shortcut does.
 - **Search learns from your opens, on the device only.** The launcher keeps a score per app of how often and how
   recently you opened it. The score loses a tenth of its weight each day: an app opened once drops out after about
-  six weeks, one you opened every day a couple of months after you stop. Poison apps are never counted. The scores
+  six weeks, one you opened every day a couple of months after you stop. Poison apps never gain a score: only the day
+  of their last open is kept, for "Not opened in a while". The scores
   are kept apart from the layout, so neither the manual nor the weekly backups carry them (a device-to-device
-  transfer can copy them, as it can the layout).
+  transfer can copy them, as it can the layout). Each score keeps the day of its app's last open, for at least 60
+  days, and the launcher notes the day it began counting: "Not opened in a while" reads both.
 - **Everything else stays in the app's private storage.** That covers the layout (JSON in SharedPreferences),
   today's open counts for poison apps (older days are dropped), the search use scores, the weekly backup folder and
   the icons of pinned shortcuts. Uninstalling deletes all of it, but not the backup files you saved elsewhere.
@@ -47,9 +54,13 @@ A launcher sees every app you have and every app you open, so this one is built 
 **Home screen**
 
 - Desktop pages with apps, shortcuts and widgets on a grid that places items in half-cell steps.
-- Long-press an item for its menu (an app's shortcuts, app info and remove, plus "set up again" on a widget), or
-  drag it to move it.
+- Long-press an item for its menu (an app's shortcuts, app info, uninstall and remove, plus "set up again" on a
+  widget), or drag it to move it. Uninstall opens Android's own confirmation, and system apps do not offer it. Once
+  the app is gone, its icons on the desktop and in the dock go too; its widgets stay for Tidy up.
   Holding a dragged item at the side of the screen flips to the page on that side.
+- The menu also moves an item to another page, picked from a list that marks the main page. The item keeps its spot
+  there if it is free, else it takes the nearest free one, and if the page has no room a message says so.
+- An icon can be renamed from its menu. The new name is that icon's only: the drawer and search keep the app's name.
 - Long-press an empty spot to add a widget, change the wallpaper or open the settings.
 - Icons on the desktop, in the dock and in the drawer shrink a little under your finger and spring back.
 - Widgets come from a searchable picker, grouped by app, that shows each widget's preview and size in cells. The
@@ -63,7 +74,10 @@ A launcher sees every app you have and every app you open, so this one is built 
 - The Home button goes back to the main page, and pressing it on the main page opens search.
 - The search bar has buttons for the voice assistant and Google Lens, and shows today's date, which opens your
   calendar. There is no weather, because it would need the network.
-- Apps paused by Digital Wellbeing are greyed out.
+- Apps paused by Focus mode or a Digital Wellbeing limit are greyed out. Settings → Home screen → Paused apps can
+  hide them instead: they leave the desktop, the dock and the drawer tabs, keeping their place, and come back when
+  the pause ends. Search still shows them, greyed out, and one dragged from there is placed out of sight, with a
+  message saying so.
 
 **Dock**
 
@@ -78,17 +92,31 @@ A launcher sees every app you have and every app you open, so this one is built 
 - Tabs, swiped sideways like pages:
   - an all-apps tab, plus tabs of apps you pick
   - a picked tab can take its apps out of the all-apps tabs, as new tabs do by default
-  - long-press a tab to rename it, add a tab or remove a picked one; the settings also reorder them
+  - long-press a tab to rename it, add a tab or remove a picked one; the settings also reorder them, and pick a
+    tab's apps from a list of all apps, which a new tab opens right after its name
 - Hidden apps are left out of every tab, but search still finds them.
 - Accent-insensitive search that ranks prefix matches first. Among equally good matches, the apps you open more
   often and more recently come first, so `s` and Go opens the app you use, not a rarely used one. The keyboard's Go
   key opens the first result. Without a query the tabs stay alphabetical.
 - A calculator: a query that is a sum, such as `125*3` or `(2+3)^2`, shows its result, and tapping the result copies
-  it. It handles `x × ÷ ^ %` and parentheses. Both `.` and `,` count as the decimal point.
+  it. It handles `x × ÷ ^ %` and parentheses, and a percentage added or taken off is of what comes before it:
+  `1500 + 21%` is 1815.
+- Numbers are read and shown the way your country writes them: in Argentina `1.500.000/12` is `125.000` and
+  `1.500,50 + 200` is `1.700,5`. A lone mark of the other kind is a decimal point unless it groups thousands (one to
+  three digits, not a 0, then three after it), so `1.5`, `0.500` and `1234.567` still read 1,5, 0,5 and 1234,567 there. Settings → App drawer can fix the format to `1.234,5` or `1,234.5` instead.
+- Unit conversion, offline: `5 km a mi`, `350 f`, `2 tazas en ml`, `100 km/h to mph` show the result, which a tap
+  copies. Without a target unit (`70 kg`) it converts to the metric or imperial counterpart. It knows length, mass,
+  volume, temperature, speed and area, in Spanish and English. `m` is the metre, `oz` the ounce of mass (`fl oz` is
+  the fluid one, as `oz` is next to a volume: `8 oz a ml`) and a cup is the US cup (236.6 ml), which the answer points out. There are no currencies, because
+  they would need the network.
+- A phone number, typed or pasted, offers Call (it opens the dialer with the number, which dials nothing by
+  itself), WhatsApp (if installed) and SMS. A link offers Open, unless an app matches too (`booking.com`), and an
+  e-mail address Write. A number needs 8 to 15 digits, alone (`1155559999`), after a `+`, or with spaces, dashes or
+  parentheses between its groups, so `1500000-250000` is still a sum.
 - A "search with" row that hands the query to Google, DuckDuckGo, Play Store, Spotify or Firefox Focus.
 - A fast scroller. Pulling down at the top of the list closes the drawer.
-- Each app's menu lists its shortcuts and can add it to the desktop, toggle its tabs, hide it, mark it as a poison
-  or open its app info.
+- Each app's menu lists its shortcuts and can add it to the desktop, toggle its tabs, hide it, mark it as a poison,
+  open its app info or uninstall it (not a system app). The dock's app menu offers uninstall too.
   You can also drag an app onto the desktop or the dock.
 
 **Poisons**
@@ -118,10 +146,27 @@ A launcher sees every app you have and every app you open, so this one is built 
 - Shrinking the desktop grid never deletes anything. Items that no longer fit move to the nearest free spot, or to
   another page, or to a new page, and the grid dialog says how many will move before you apply it. Fewer dock icons
   per page hide the ones past the new size, kept until the dock grows again.
-- Desktop pages can be added, removed (their items move to other pages) and set as the main page. Dock pages can be
-  added and removed; removing one deletes its icons, after asking. The desktop and the dock take up to 20 pages each.
+- Desktop pages can be added, removed (their items move to other pages), reordered and set as the main page, which
+  stays the main one wherever it moves. Dock pages can be added, reordered and removed; removing one deletes its icons,
+  after asking. The desktop and the dock take up to 20 pages each.
+- Settings → Home screen → Tidy up lists what needs a look, and its row counts the broken items and empty pages
+  (duplicates may be on purpose, so they are listed but not counted):
+  - icons, dock taps and swipes whose app is uninstalled, shortcuts whose app is gone, and widgets whose app is gone
+    (a widget waiting to be set up after a Nova import is not broken)
+  - an app on more than one page, or in the dock and on a page
+  - empty pages
+
+  Each entry says where it is and has its own Remove. "Remove everything broken" removes only the broken ones, after
+  asking, never the duplicates or the pages. Nothing is removed on its own. An app in a paused work profile, or one
+  being updated, is not listed as broken.
 - The drawer section reorders, renames and removes tabs, sets whether a picked tab leaves the all-apps tabs, and
-  lists the hidden apps and the poisons to tick or untick. It also picks the app the pause offers instead.
+  lists the hidden apps and the poisons to tick or untick. It also picks the app the pause offers instead and the
+  number format of search (automatic, `1.234,5` or `1,234.5`).
+- Settings → App drawer → Not opened in a while lists the apps you have not opened from the launcher in 60 days and
+  installed at least that long ago, each with Uninstall. System apps, poisons, apps with a widget on the desktop and
+  work profile apps are left out. The launcher began counting opens with this feature's release (or up to six weeks
+  before, as far as the search scores it already had show), so until then the row says the date the list is ready.
+  These are only candidates: see [Known limitations](#known-limitations).
 - Haptic feedback (on by default, switch in Settings → Gestures): a light vibration on long presses, drops (a
   different one when there is no room), swipe gestures, the double tap and settings controls. The phone's own touch
   vibration setting still applies.
@@ -139,7 +184,8 @@ A launcher sees every app you have and every app you open, so this one is built 
   - drawer tabs and hidden apps
   - grid sizes (except the drawer's rows), the main page, the double-tap gesture and dock wrap-around
 
-  Your poisons and the app the pause offers instead are kept.
+  Your poisons, the app the pause offers instead, the haptic feedback setting, the number format and the paused apps
+  setting are kept.
 
 ## Requirements
 
@@ -158,7 +204,7 @@ A launcher sees every app you have and every app you open, so this one is built 
 
 ```sh
 ./gradlew assembleRelease     # writes build/outputs/apk/release/launcher-release.apk
-./gradlew testDebugUnitTest   # unit tests: layout model, search, calculator, Nova converter
+./gradlew testDebugUnitTest   # unit tests: layout model, search and its answers, Nova converter
 ```
 
 The build downloads Gradle and the dependencies. The app it produces has no network access.
@@ -217,6 +263,7 @@ These are the permissions `apkanalyzer manifest permissions` lists for a release
 |---|---|
 | `android.permission.QUERY_ALL_PACKAGES` | Lists every installed app and every widget provider. That includes widget receivers that are not exported, which a `<queries>` block misses. Seeing every app is why the no-network rule matters. |
 | `android.permission.EXPAND_STATUS_BAR` | Swiping down opens the notification shade. |
+| `android.permission.REQUEST_DELETE_PACKAGES` | Uninstall in app menus and in "Not opened in a while". It only opens Android's own confirmation, which removes nothing until you accept. Granted at install. |
 | `io.github.gastoncampana.launcher.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | Added by AndroidX Core for its receiver helper on older Android versions. It is a signature permission, and nothing in this app is guarded by it. |
 
 There are no runtime permission prompts. Adding a widget may show Android's own dialog asking whether the launcher
@@ -228,6 +275,10 @@ may create widgets.
   picked inside a system chooser (such as the wallpaper chooser) opens right away.
 - **Search learns only from opens through the launcher.** An app opened from a notification or from Recents does
   not move up in search.
+- **"Not opened in a while" sees only opens through the launcher too.** An app you open only from its
+  notifications, from Recents or from a link in another app (a chat app, say) can be listed although you use it, so
+  check before uninstalling. Work profile apps are not listed, because Android gives the launcher only the main
+  profile's install dates; nor is any app whose install date cannot be read.
 - **Shortcuts that Nova pinned belong to Nova.** After an import they appear but do not open, so add them again from
   the app's menu or from the app itself.
 - **Pinned shortcuts do not survive a reinstall.** They belong to the install that pinned them, and backups do not
@@ -239,13 +290,22 @@ may create widgets.
   "open drawer".
 - **App menus list shortcuts only for the main profile.** A work profile app's menu lists none, and a shortcut in a
   menu is added with its +, not dragged out as in Nova.
-- **No icon packs, and icons cannot be renamed.** A Nova import keeps the labels the icons had in Nova.
+- **No icon packs.** A Nova import keeps the labels the icons had in Nova.
+- **Tidy up looks at the desktop and the dock icons shown.** Dock icons hidden by a smaller dock, the double-tap
+  app and the app offered instead of a poison are not checked. An app that is installed but disabled is not listed
+  as broken.
 - **Other apps can pin shortcuts, but not widgets.**
 - **Apps open with Android's own animation, not out of their icon.** From the December 2024 Android 15 update on,
   only a home app with a system permission picks the open animation, and the Pixel launcher's morph from icon to
   window and back needs one too.
 - **The screen does not rotate.** It stays in the phone's natural orientation.
 - **The "search with" providers and the Lens button are fixed.** The Lens button needs the Google Lens app.
+- **Phone numbers are recognised by their shape.** Two groups joined by a single dash, such as `4555-1234`, read as
+  a subtraction: type the area code or a space. Dashes alone read as one too when a group has five digits or more
+  without a leading 0 (`25000-7500-1500`), and a day and month before a year (`29-10-2024`) are no phone number. A
+  chain of short groups, such as `1500-200-3000`, still reads as one. Without a `+`, the last group must have four digits, as in
+  Argentina and North America. WhatsApp gets the international form of the number, with the mobile 9 added for
+  Argentina; WhatsApp Business is not offered.
 - **Swipe down depends on a non-public Android API.** There is no public way to open the notification shade, so a
   future Android version may block it.
 
@@ -260,10 +320,10 @@ Kotlin sources are in `src/main/kotlin/io/github/gastoncampana/launcher/`, and t
 | `src/main/AndroidManifest.xml` | Permissions (INTERNET removed), the home activity and the pinned-shortcut activity. |
 | `src/main/res/values/`, `src/main/res/values-es/` | UI strings: English (the default) and Spanish. |
 | `src/main/res/resources.properties` | Names English as the default locale for the generated per-app language list. |
-| `Model.kt` | Pure logic: the layout model, grid placement, JSON persistence, app lookup, search, the calculator and which shortcuts an app's menu lists. |
+| `Model.kt` | Pure logic: the layout model, grid placement, JSON persistence, app lookup, search and its answers (calculator, unit conversion, phone numbers, links and addresses), which shortcuts an app's menu lists and which apps count as not opened in a while. |
 | `Nova.kt` | A pure converter from a Nova backup's database rows and preferences to a layout. |
 | `NovaImport.kt` | Reads the `.novabackup` zip (`nova.db` and `nova.xml`). |
-| `Launcher.kt` | The home activity (app list, app shortcuts, widget hosting, opening apps, poisons, use scores for search, backups, Nova import), the shared layout state and `PinActivity` for pinned shortcuts. |
+| `Launcher.kt` | The home activity (app list, app shortcuts, widget hosting, opening and uninstalling apps, poisons, use scores, backups, Nova import), the shared layout state and `PinActivity` for pinned shortcuts. |
 | `Ui.kt` | The Compose UI: desktop, dock, search bar, drawer, menus and dialogs, the pause screen and the settings. |
 | `ModelTest.kt`, `NovaTest.kt` | Unit tests for the model and the Nova converter. |
 | `scripts/install.sh` | Builds and installs an update over adb without losing the default home choice. |

@@ -2,9 +2,17 @@ package io.github.gastoncampana.launcher
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.math.BigDecimal
+import java.math.MathContext
+import java.text.DecimalFormat
+import java.text.DecimalFormatSymbols
 import java.text.Normalizer
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.floor
+import kotlin.math.ln
+import kotlin.math.log10
 import kotlin.math.pow
 
 /** Stable id of a launchable activity: "<flattened component>#<user serial number>". */
@@ -67,9 +75,17 @@ data class Layout(
     val haptics: Boolean = true,
     /** A healthy app a poison's pause screen offers to open instead. */
     val instead: Target? = null,
+    /** The decimal mark search reads and shows numbers with: ',' (1.234,5) or '.' (1,234.5); null follows the phone's country. */
+    val decimal: Char? = null,
+    /** Apps paused by Focus mode or a Digital Wellbeing limit leave the desktop, dock and drawer tabs instead of greying out; search still shows them. */
+    val hideSuspended: Boolean = false,
 )
 
 fun <T> List<T>.replaced(index: Int, f: (T) -> T): List<T> = mapIndexed { i, x -> if (i == index) f(x) else x }
+
+/** [this] with the element at [from] moved to [to]; unchanged when either is out of range. */
+fun <T> List<T>.shifted(from: Int, to: Int): List<T> =
+    if (from !in indices || to !in indices) this else toMutableList().apply { add(to, removeAt(from)) }
 
 /** [this] without [app] (matched by [find], so under any of its ids) or, when absent, with it as [id]. */
 fun <T> Set<AppId>.toggled(app: T, id: AppId, find: (AppId) -> T?): Set<AppId> =
@@ -156,6 +172,74 @@ fun Layout.withoutPage(page: Int): Layout {
 }
 
 /**
+ * Without the desktop icons and dock targets of package [pkg] for user [user] (serial numbers), as Nova drops an app
+ * uninstalled from its menu. Shortcuts are [mainUser]'s ([Target.Shortcut] keeps no user); widgets stay for Ordenar.
+ */
+fun Layout.withoutApp(pkg: String, user: Long, mainUser: Long): Layout {
+    fun gone(t: Target?) = when (t) {
+        is Target.App -> packageKey(t.id) == "$pkg#$user"
+        is Target.Shortcut -> t.pkg == pkg && user == mainUser
+        null -> false
+    }
+    return copy(
+        desktop = desktop.map { items -> items.filterNot { it is Item.Icon && gone(it.target) } },
+        dock = dock.map { icons -> icons.map { DockIcon(it.tap.takeUnless(::gone), it.up.takeUnless(::gone), it.down.takeUnless(::gone)) } },
+    )
+}
+
+/** Moves desktop page [from] to [to]; the main page stays the main one wherever it lands. */
+fun Layout.withPageMoved(from: Int, to: Int): Layout =
+    copy(desktop = desktop.shifted(from, to), defaultPage = desktop.indices.toList().shifted(from, to).indexOf(defaultPage))
+
+/** Where something sits: [item] on desktop [page], or dock [page]'s [slot], whose tap (or [swipe]) opens [target]. */
+sealed interface Place {
+    data class Desktop(val page: Int, val item: Item) : Place
+    data class Dock(val page: Int, val slot: Int, val target: Target, val swipe: Swipe? = null) : Place
+}
+
+/** What Ajustes → Ordenar lists ([audit]). Nothing in it goes unless the owner removes it. */
+data class Audit(
+    /** Icons, dock taps and swipes, and widgets whose app or widget is gone. */
+    val broken: List<Place> = emptyList(),
+    /** The places of one app (by [packageKey]) on more than one page, or in the dock and on a page. */
+    val twins: List<List<Place>> = emptyList(),
+    /** Empty desktop pages, but one: the main one when all are empty (the last page stays). */
+    val empty: List<Int> = emptyList(),
+) {
+    /** What to fix: twins may be on purpose, so they are listed but not counted. */
+    val size get() = broken.size + empty.size
+}
+
+/**
+ * What needs the owner's attention: icons and dock targets [alive] rejects, widgets [widgetAlive] rejects, the same
+ * app in more than one place, and empty pages. Only the dock icons shown count, and only their taps make twins: a
+ * swipe shows no icon. Twins are of live apps only (a gone one is broken already), and the dock counts as one page.
+ */
+fun Layout.audit(alive: (Target) -> Boolean, widgetAlive: (Item.Widget) -> Boolean): Audit {
+    val items = desktop.flatMapIndexed { page, items -> items.map { Place.Desktop(page, it) } }
+    val docked = dock.flatMapIndexed { page, icons ->
+        icons.take(dockSize).flatMapIndexed { slot, icon ->
+            listOfNotNull(
+                icon.tap?.let { Place.Dock(page, slot, it) },
+                icon.up?.let { Place.Dock(page, slot, it, Swipe.UP) },
+                icon.down?.let { Place.Dock(page, slot, it, Swipe.DOWN) },
+            )
+        }
+    }
+    val broken = items.filter { (_, item) -> if (item is Item.Icon) !alive(item.target) else !widgetAlive(item as Item.Widget) } +
+        docked.filter { !alive(it.target) }
+    val twins = (items + docked.filter { it.swipe == null })
+        .mapNotNull { place ->
+            val app = (if (place is Place.Desktop) (place.item as? Item.Icon)?.target else (place as Place.Dock).target) as? Target.App
+            app?.takeIf(alive)?.let { packageKey(it.id) to place }
+        }
+        .groupBy({ it.first }, { it.second }).values
+        .filter { places -> places.distinctBy { (it as? Place.Desktop)?.page ?: -1 }.size > 1 }
+    val empty = desktop.indices.filter { desktop[it].isEmpty() }
+    return Audit(broken, twins, if (empty.size == desktop.size) empty - defaultPage else empty)
+}
+
+/**
  * Where widget [w], last seen on [page], is now: there as it was, else the first one of the same provider and id
  * on any page (a drag, a grid change or a removed page moved it). Null once it is gone.
  */
@@ -215,6 +299,8 @@ fun Layout.toJson(): String = JSONObject()
     .put("drawerRows", drawerRows)
     .put("haptics", haptics)
     .put("instead", instead?.toJson())
+    .put("decimal", decimal?.toString())
+    .put("hideSuspended", hideSuspended)
     .toString()
 
 fun parseLayout(json: String): Layout {
@@ -248,6 +334,8 @@ fun parseLayout(json: String): Layout {
         drawerRows = size("drawerRows", 6),
         haptics = root.optBoolean("haptics", true),
         instead = root.target("instead"),
+        decimal = root.optString("decimal").singleOrNull()?.takeIf { it == ',' || it == '.' },
+        hideSuspended = root.optBoolean("hideSuspended"),
     )
 }
 
@@ -321,25 +409,222 @@ const val USE_DECAY = 0.9
 /** A use [score] last updated on day [since] as of day [now] (days since 1970, fractional); a clock set back keeps it. */
 fun decayed(score: Double, since: Double, now: Double): Double = score * USE_DECAY.pow((now - since).coerceAtLeast(0.0))
 
+/** Days without an open, and since install, that make an app a candidate to uninstall. */
+const val UNUSED_DAYS = 60
+
+/** Below this a use score ranks as none: a single open fades under it in about six weeks. */
+const val MIN_USE = 0.01
+
+/** The search rank of a use [score] last updated on day [since], as of day [now]: [decayed], none below [MIN_USE]. */
+fun useRank(score: Double, since: Double, now: Double): Double = decayed(score, since, now).takeIf { it >= MIN_USE } ?: 0.0
+
+/** Whether a use entry stays: while it ranks, and [UNUSED_DAYS] at least, so a missing one means no open in that long. */
+fun kept(score: Double, since: Double, now: Double) = useRank(score, since, now) > 0 || now - since < UNUSED_DAYS
+
 /**
- * The value of a search query that is a sum, like "125*3" or "1,5 + 2" (null for anything else, a lone number
- * included). Both '.' and ',' are decimal points; x × ÷ ^ % and parentheses work as on a calculator.
+ * The day opens count from (see [unused]) for a use store first read on day [now], its entries last updated on days
+ * [since]: the oldest, but no earlier than [MIN_USE] alone kept them, as before [kept] (a single open, about 44 days).
  */
-fun calc(query: String): Double? {
+fun countedSince(since: Collection<Double>, now: Double): Double = (since + now).min().coerceAtLeast(now - ln(MIN_USE) / ln(USE_DECAY))
+
+/** The packages of the desktop's widgets: in use, though a tap on a widget is no open the launcher sees. */
+val Layout.widgetPackages: Set<String> get() = desktop.flatten().filterIsInstance<Item.Widget>().mapTo(HashSet()) { it.provider.substringBefore('/') }
+
+/**
+ * Ajustes → Sin abrir hace tiempo: the [apps] whose [lastOpen] (null: none kept, never or long ago) and [installed]
+ * day (null: unknown, so not listed) are [UNUSED_DAYS] old as of [now]; days since 1970. Null while opens have been
+ * counted (since day [tracked]) for less than that: an app not seen opened may have been opened before.
+ */
+fun <T> unused(apps: List<T>, tracked: Double, now: Double, lastOpen: (T) -> Double?, installed: (T) -> Double?): List<T>? {
+    if (now - tracked < UNUSED_DAYS) return null
+    return apps.filter { app -> lastOpen(app).let { it == null || now - it >= UNUSED_DAYS } && installed(app)?.let { now - it >= UNUSED_DAYS } == true }
+}
+
+/** What search answers besides apps, above them: one of these at most (see [answer]). */
+sealed interface Answer {
+    /** A sum or a converted quantity, as shown and copied ("3,107 mi"); [usCup] when a cup took part. */
+    data class Value(val text: String, val usCup: Boolean = false) : Answer
+
+    /** A phone number as typed, without its separators: digits, after a '+' when it had one. */
+    data class Phone(val number: String) : Answer
+
+    /** A web address, with its scheme. */
+    data class Link(val url: String) : Answer
+
+    data class Email(val address: String) : Answer
+}
+
+/**
+ * The [Answer] to search [query], numbers read and shown with [decimal] as the decimal mark. A phone number comes
+ * first, so "11 5555-1234" never also shows a sum.
+ */
+fun answer(query: String, decimal: Char): Answer? {
+    val q = query.trim().replace(Regex("""\s+"""), " ")
+    return phoneOf(q)?.let(Answer::Phone)
+        ?: q.removePrefix("mailto:").takeIf(EMAIL::matches)?.let(Answer::Email)
+        // Android matches an intent's scheme in lower case only: "HTTPS://" would find no browser.
+        ?: q.takeIf(LINK::matches)?.let { Answer.Link(if ("://" in it) it.substringBefore(':').lowercase() + ":" + it.substringAfter(':') else "https://$it") }
+        ?: convert(q, decimal)
+        ?: calc(q, decimal)?.let { Answer.Value(formatNumber(it, decimal)) }
+}
+
+private val EMAIL = Regex("""[^\s@]+@[^\s@]+\.[A-Za-z]{2,}""")
+private val LINK = Regex("""(?i)https?://\S+|([a-z0-9-]+\.)+[a-z]{2,}([/?#]\S*)?""")
+private val PHONE = Regex("""\+?(\(\d+\)[ -]?|\d+[ -])*\d+""")
+
+/**
+ * [q] as a phone number: 8 to 15 digits alone or after a '+', or in groups split by spaces, dashes or parentheses whose
+ * last group has four digits. Dashes alone make a subtraction of two numbers ("25000-7500") or of one no phone group has,
+ * five digits or more without a leading 0 ("25000-7500-1500"); a day and month before a year make a date.
+ */
+private fun phoneOf(q: String): String? {
+    val digits = q.filter(Char::isDigit)
+    if (!PHONE.matches(q) || digits.length !in 8..15) return null
+    if (q.startsWith('+')) return "+$digits"
+    if (q == digits) return digits // "1155559999": no sum is that many digits alone
+    val groups = q.split(' ', '-', '(', ')').filter(String::isNotEmpty)
+    val subtraction = q.none { it == ' ' || it == '(' } && (groups.size == 2 || groups.any { it.length > 4 && it[0] != '0' })
+    val date = groups.size == 3 && groups[0].length <= 2 && groups[1].length <= 2 // "29-10-2024"
+    return digits.takeIf { groups.size > 1 && groups.last().length == 4 && !subtraction && !date }
+}
+
+/**
+ * The digits wa.me takes for [e164] (as PhoneNumberUtils formats it): an Argentine mobile needs its 9 after the 54,
+ * which national forms such as "11 5555-1234" leave out. Landlines get it too: WhatsApp numbers there are mobiles.
+ */
+fun whatsAppNumber(e164: String): String {
+    val digits = e164.filter(Char::isDigit)
+    return if (digits.startsWith("54") && !digits.startsWith("549")) "549" + digits.drop(2) else digits
+}
+
+/** [value] grouped in thousands, with [decimal] as the decimal mark; scientific where ten decimals would round to 0 or the digits run off the screen. */
+fun formatNumber(value: Double, decimal: Char): String {
+    val symbols = DecimalFormatSymbols(Locale.ROOT).apply {
+        decimalSeparator = decimal
+        groupingSeparator = groupMark(decimal)
+        exponentSeparator = "e"
+    }
+    val pattern = if (value != 0.0 && abs(value) < 1e-6 || abs(value) >= 1e15) "0.#####E0" else "#,##0.##########"
+    return DecimalFormat(pattern, symbols).format(value + 0.0) // -0.0 + 0.0 is 0.0: never "-0"
+}
+
+private fun groupMark(decimal: Char) = if (decimal == ',') '.' else ','
+
+/**
+ * Number [t] with [decimal] as its decimal mark and the other mark grouping thousands ("1.500.000", "1.500,50"), or
+ * null. Grouping starts with one to three digits, not a 0; else a lone mark of the other kind is a decimal mark too:
+ * "1.5", "0.500" and "1234.567" read 1,5, 0,5 and 1234,567.
+ */
+private fun number(t: String, decimal: Char): Double? {
+    val group = groupMark(decimal)
+    val plain = when {
+        Regex("""[1-9]\d{0,2}(\$group\d{3})+(\$decimal\d*)?""").matches(t) -> t.replace(group.toString(), "")
+        t.count { it == group } == 1 && decimal !in t -> t.replace(group, decimal)
+        else -> t
+    }.replace(decimal, '.')
+    return plain.takeIf { it.all { c -> c.isDigit() || c == '.' } }?.toDoubleOrNull() // "1..2" and "" fail here
+}
+
+/**
+ * A unit search converts: [factor] of its dimension's base unit (m, g, ml, km/h, m²; temperatures go by formula) and
+ * [pair], the symbol of its metric or imperial counterpart. Kitchen units have no [symbol]: they show the word typed.
+ */
+private class Measure(val symbol: String, val dimension: String, val factor: Double, val pair: String, vararg val names: String)
+
+/** Millilitres in the cup search converts with: the US one, as recipes online mean it. Argentine cups vary (200 to 250 ml), so the answer names it. */
+const val US_CUP_ML = 236.5882365
+
+private val CUP = Measure("", "volume", US_CUP_ML, "ml", "taza", "tazas", "cup", "cups")
+
+private val MEASURES = listOf(
+    Measure("m", "length", 1.0, "ft", "metro", "metros", "meter", "meters", "metre", "metres"),
+    Measure("km", "length", 1000.0, "mi", "kilometro", "kilometros", "kilometer", "kilometers", "kilometre", "kilometres"),
+    Measure("cm", "length", 0.01, "in", "centimetro", "centimetros", "centimeter", "centimeters", "centimetre", "centimetres"),
+    Measure("mm", "length", 0.001, "in", "milimetro", "milimetros", "millimeter", "millimeters", "millimetre", "millimetres"),
+    Measure("mi", "length", 1609.344, "km", "milla", "millas", "mile", "miles"),
+    Measure("yd", "length", 0.9144, "m", "yarda", "yardas", "yard", "yards"),
+    Measure("ft", "length", 0.3048, "m", "pie", "pies", "foot", "feet"),
+    Measure("in", "length", 0.0254, "cm", "pulgada", "pulgadas", "inch", "inches"),
+    Measure("g", "mass", 1.0, "oz", "gramo", "gramos", "gram", "grams", "gr"),
+    Measure("kg", "mass", 1000.0, "lb", "kilo", "kilos", "kilogramo", "kilogramos", "kilogram", "kilograms"),
+    Measure("lb", "mass", 453.59237, "kg", "lbs", "libra", "libras", "pound", "pounds"),
+    Measure("oz", "mass", 28.349523125, "g", "onza", "onzas", "ounce", "ounces"),
+    Measure("ml", "volume", 1.0, "fl oz", "mililitro", "mililitros", "milliliter", "milliliters", "millilitre", "millilitres", "cc"),
+    Measure("l", "volume", 1000.0, "fl oz", "lt", "litro", "litros", "liter", "liters", "litre", "litres"),
+    CUP,
+    Measure("", "volume", 14.78676478125, "ml", "cda", "cdas", "cucharada", "cucharadas", "tbsp", "tablespoon", "tablespoons"),
+    Measure("", "volume", 4.92892159375, "ml", "cdta", "cdtas", "cucharadita", "cucharaditas", "tsp", "teaspoon", "teaspoons"),
+    Measure("fl oz", "volume", 29.5735295625, "ml", "floz", "onza liquida", "onzas liquidas", "fluid ounce", "fluid ounces"),
+    Measure("°C", "temperature", 1.0, "°F", "c", "ºc", "celsius", "centigrados"),
+    Measure("°F", "temperature", 1.0, "°C", "f", "ºf", "fahrenheit"),
+    Measure("km/h", "speed", 1.0, "mph", "kmh", "kph", "kilometros por hora", "kilometers per hour"),
+    Measure("mph", "speed", 1.609344, "km/h", "millas por hora", "miles per hour"),
+    Measure("m/s", "speed", 3.6, "km/h", "metros por segundo", "meters per second"),
+    Measure("m²", "area", 1.0, "ft²", "m2", "metro cuadrado", "metros cuadrados", "square meter", "square meters", "sq m"),
+    Measure("km²", "area", 1e6, "mi²", "km2"),
+    Measure("ft²", "area", 0.09290304, "m²", "ft2", "sq ft", "pie cuadrado", "pies cuadrados", "square foot", "square feet"),
+    Measure("mi²", "area", 2589988.110336, "km²", "mi2", "sq mi"),
+    Measure("ha", "area", 1e4, "ac", "hectarea", "hectareas", "hectare", "hectares"),
+    Measure("ac", "area", 4046.8564224, "ha", "acre", "acres"),
+)
+
+private val BY_NAME = MEASURES.flatMap { m -> (m.names.toList() + m.symbol).filter(String::isNotEmpty).map { fold(it) to m } }.toMap()
+private val OZ = BY_NAME.getValue("oz")
+private val FLUID_OZ = BY_NAME.getValue("fl oz")
+private val QUANTITY = Regex("""(-?[\d.,]+) ?(.+)""")
+private val CONNECTED = Regex("""(.+?) (?:a|en|to|in) (.+)""")
+
+/** "5 km a mi", "2 tazas en ml" or "70 kg" (to its counterpart), to four significant digits at least. */
+private fun convert(q: String, decimal: Char): Answer.Value? {
+    val (amount, units) = QUANTITY.matchEntire(fold(q).replace(Regex("""\s+"""), " "))?.destructured ?: return null
+    val n = (number(amount.removePrefix("-"), decimal) ?: return null) * if (amount.startsWith('-')) -1 else 1
+    val alone = BY_NAME[units]
+    val (first, second, typed) = if (alone != null) {
+        Triple(alone, MEASURES.first { it.symbol == alone.pair }, "")
+    } else {
+        val (a, b) = CONNECTED.matchEntire(units)?.destructured ?: return null
+        Triple(BY_NAME[a] ?: return null, BY_NAME[b] ?: return null, b)
+    }
+    // Next to a volume, oz is the fluid ounce: "8 oz a ml", "1 taza a oz".
+    val from = if (first === OZ && second.dimension == "volume") FLUID_OZ else first
+    val to = if (second === OZ && first.dimension == "volume") FLUID_OZ else second
+    if (from.dimension != to.dimension) return null
+    val value = when {
+        from.dimension != "temperature" -> n * from.factor / to.factor
+        from == to -> n
+        from.symbol == "°C" -> n * 9 / 5 + 32
+        else -> (n - 32) * 5 / 9
+    }
+    return Answer.Value(formatNumber(significant(value), decimal) + " " + to.symbol.ifEmpty { typed }, usCup = from === CUP || to === CUP)
+}
+
+/** [v] to four significant digits, or its whole part where that is longer. */
+private fun significant(v: Double): Double {
+    if (v == 0.0 || !v.isFinite()) return v
+    return BigDecimal(v).round(MathContext(maxOf(4, floor(log10(abs(v))).toInt() + 1))).toDouble()
+}
+
+/**
+ * The value of a search query that is a sum, like "125*3" or "1.500,5 + 2" (null for anything else, a lone number
+ * included). [decimal] is the decimal mark and the other one groups thousands (see [number]); x × ÷ ^ % and
+ * parentheses work as on a calculator, so "1500 + 21%" adds 21% of 1500.
+ */
+fun calc(query: String, decimal: Char): Double? {
     val s = query.filterNot { it == ' ' }.map { CALC_ALIASES[it] ?: it }.joinToString("")
     // The parser recurses per parenthesis or power, so pasted junk could overflow the stack.
     if (s.length > 100 || s.drop(1).none { it in "+-*/^%" }) return null
     return try {
-        Calc(s).run { sum().takeIf { done() && it.isFinite() } }
+        Calc(s, decimal).run { sum().takeIf { done() && it.isFinite() } }
     } catch (e: NumberFormatException) {
         null
     }
 }
 
-private val CALC_ALIASES = mapOf('x' to '*', '×' to '*', '÷' to '/', ',' to '.')
+private val CALC_ALIASES = mapOf('x' to '*', '×' to '*', '÷' to '/')
+private val PERCENT = Regex("""[\d.,]+%""")
 
 /** Recursive descent over [s]: sum = term (± term)*, term = power (× power)*, power = factor (^ power)?. */
-private class Calc(private val s: String) {
+private class Calc(private val s: String, private val decimal: Char) {
     private var i = 0
 
     fun done() = i == s.length
@@ -348,10 +633,12 @@ private class Calc(private val s: String) {
 
     fun sum(): Double {
         var v = term()
-        while (true) v = when (next('+', '-')) {
-            '+' -> v + term()
-            '-' -> v - term()
-            else -> return v
+        while (true) {
+            val op = next('+', '-') ?: return v
+            val start = i
+            val t = term()
+            val share = if (PERCENT.matches(s.substring(start, i))) v * t else t // "1500 + 21%": 21% of 1500
+            v = if (op == '+') v + share else v - share
         }
     }
 
@@ -375,8 +662,8 @@ private class Calc(private val s: String) {
             next('(') != null -> sum().also { next(')') ?: throw NumberFormatException("no closing parenthesis") }
             else -> {
                 val start = i
-                while (s.getOrNull(i)?.let { it.isDigit() || it == '.' } == true) i++
-                s.substring(start, i).toDouble() // throws when empty or "1..2"
+                while (s.getOrNull(i)?.let { it.isDigit() || it == '.' || it == ',' } == true) i++
+                number(s.substring(start, i), decimal) ?: throw NumberFormatException("not a number")
             }
         }
         return if (next('%') != null) v / 100 else v

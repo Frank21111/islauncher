@@ -3,6 +3,7 @@ package io.github.gastoncampana.launcher
 import io.github.gastoncampana.launcher.Target.App
 import io.github.gastoncampana.launcher.Target.Shortcut
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -39,6 +40,20 @@ class ModelTest {
         // Five opens a month ago weigh less than one yesterday; a few hours sooner wins between single opens.
         assertTrue(decayed(5.0, 0.0, 30.0) < decayed(1.0, 29.0, 30.0))
         assertTrue(decayed(1.0, 29.9, 30.0) > decayed(1.0, 29.8, 30.0))
+    }
+
+    @Test
+    fun aFadedUseRanksAsNoneButStaysSixtyDays() {
+        assertEquals(0.0, useRank(1.0, 150.0, 200.0), 0.0) // one open 50 days ago: below MIN_USE, so as never opened
+        assertEquals(0.9, useRank(1.0, 199.0, 200.0), 1e-9)
+        // Kept while it ranks, and 60 days at least, so a missing entry means no open in that long.
+        assertTrue(kept(1.0, 150.0, 200.0))
+        assertFalse(kept(1.0, 140.0, 200.0))
+        assertTrue(kept(1000.0, 100.0, 200.0))
+        // Before that, one open was dropped after about 44 days: counting is sure only since then, or since the oldest entry.
+        assertEquals(199.0, countedSince(listOf(199.5, 199.0), 200.0), 0.0)
+        assertEquals(200.0, countedSince(emptyList(), 200.0), 0.0)
+        assertEquals(156.3, countedSince(listOf(125.0, 190.0), 200.0), 0.05) // a daily app abandoned 75 days ago
     }
 
     @Test
@@ -103,6 +118,8 @@ class ModelTest {
             drawerRows = 8,
             haptics = false,
             instead = App("k/k.Kindle#0"),
+            decimal = '.',
+            hideSuspended = true,
         )
         assertEquals(layout, parseLayout(layout.toJson()))
     }
@@ -113,6 +130,55 @@ class ModelTest {
     }
 
     @Test
+    fun pausedAppsStayGreyedForLayoutsSavedBeforeTheSetting() {
+        assertEquals(false, parseLayout("""{"dock":[[]],"desktop":[[]],"tabs":[]}""").hideSuspended)
+    }
+
+    @Test
+    fun unusedAppsWereNeitherOpenedNorInstalledInSixtyDaysOnceTrackedThatLong() {
+        // [app, day of its last open (null: none kept), install day (null: unknown)], as of day 200.
+        val apps = listOf(
+            Triple("opened lately", 150.0, 0.0),
+            Triple("opened 60 days ago", 140.0, 0.0),
+            Triple("not seen opened", null, 0.0),
+            Triple("installed lately", null, 150.0),
+            Triple("installed 60 days ago", null, 140.0),
+            Triple("install unknown", null, null),
+            Triple("clock set back", 250.0, 0.0),
+        )
+        fun pick(tracked: Double) = unused(apps, tracked, 200.0, { it.second }, { it.third })?.map { it.first }
+        val old = listOf("opened 60 days ago", "not seen opened", "installed 60 days ago")
+        assertEquals(old, pick(100.0))
+        assertEquals(old, pick(140.0))
+        // Counting for less than 60 days: an app not seen opened may have been opened before.
+        assertNull(pick(140.5))
+        assertEquals(emptyList<String>(), unused(emptyList<Triple<String, Double?, Double?>>(), 0.0, 200.0, { it.second }, { it.third }))
+        // A widget on the desktop is in use, though a tap on it is no open the launcher sees: its app is left out.
+        val desktop = listOf(listOf(Item.Widget("w/w.Clock", 3, Cell(0f, 0f, 2f, 1f)), Item.Icon(App("a/a.A#0"), "A", Cell(2f, 0f))), listOf(Item.Widget("h/h.Habits", 0, Cell(0f, 0f))))
+        assertEquals(setOf("w", "h"), Layout(desktop = desktop).widgetPackages)
+    }
+
+    @Test
+    fun uninstallingAnAppTakesItsIconsAndDockTargetsAlong() {
+        val gone = App("g/g.Main#0")
+        val alias = App("g/g.Alias#0") // another activity of the same package
+        val work = App("g/g.Main#10") // the work profile's copy stays
+        val chat = Shortcut("g", "chat", "Chat")
+        val maps = App("m/m.Maps#0")
+        val widget = Item.Widget("g/g.Widget", 3, Cell(0f, 1f, 2f, 1f)) // left to Ordenar: its id must be freed
+        val keep = listOf(Item.Icon(work, "G", Cell(2f, 0f)), Item.Icon(maps, "Maps", Cell(4f, 0f)), widget)
+        val layout = Layout(
+            desktop = listOf(listOf(Item.Icon(gone, "G", Cell(0f, 0f)), Item.Icon(alias, "G2", Cell(1f, 0f)), Item.Icon(chat, "Chat", Cell(3f, 0f))) + keep),
+            dock = listOf(listOf(DockIcon(gone, up = maps, down = chat), DockIcon(maps, up = alias), DockIcon(work)) + List(2) { DockIcon() }),
+        )
+        val after = layout.withoutApp("g", 0, mainUser = 0)
+        assertEquals(listOf(keep), after.desktop)
+        assertEquals(listOf(DockIcon(up = maps), DockIcon(maps), DockIcon(work)) + List(2) { DockIcon() }, after.dock[0])
+        // In the work profile only its own copy goes: shortcuts are the main profile's.
+        assertEquals(listOf(DockIcon(gone, up = maps, down = chat), DockIcon(maps, up = alias), DockIcon()), layout.withoutApp("g", 10, mainUser = 0).dock[0].take(3))
+    }
+
+    @Test
     fun theAppInsteadOfAPoisonIsUnsetForLayoutsSavedBeforeTheSetting() {
         assertNull(parseLayout("""{"dock":[[]],"desktop":[[]],"tabs":[]}""").instead)
         assertNull(parseLayout(Layout().toJson()).instead) // null leaves the key out
@@ -120,17 +186,153 @@ class ModelTest {
 
     @Test
     fun calcEvaluatesArithmeticAndIgnoresEverythingElse() {
-        assertEquals(375.0, calc("125*3")!!, 0.0)
-        assertEquals(7.0, calc("1 + 2 x 3")!!, 0.0)
-        assertEquals(9.0, calc("(1+2)×3")!!, 0.0)
-        assertEquals(3.0, calc("1,5 * 2")!!, 0.0) // a comma is a decimal point too
-        assertEquals(0.3, calc("0.1+0.2")!!, 1e-12)
-        assertEquals(-4.0, calc("-2^2")!!, 0.0)
-        assertEquals(30.0, calc("200*15%")!!, 1e-12)
-        assertEquals(2.5, calc("10÷4")!!, 0.0)
-        // Not sums: app names, lone numbers, broken or undefined expressions.
-        for (q in listOf("", "Spotify", "2048", "-5", "7-Eleven", "1+", "(1+2", "1/0", "1..2+1", "2**3")) assertNull(q, calc(q))
-        assertNull(calc("(".repeat(5000) + "1" + ")".repeat(5000))) // pasted junk must not overflow the stack
+        for (d in listOf(',', '.')) {
+            assertEquals(375.0, calc("125*3", d)!!, 0.0)
+            assertEquals(7.0, calc("1 + 2 x 3", d)!!, 0.0)
+            assertEquals(9.0, calc("(1+2)×3", d)!!, 0.0)
+            assertEquals(0.3, calc("0.1+0.2", d)!!, 1e-12)
+            assertEquals(-4.0, calc("-2^2", d)!!, 0.0)
+            assertEquals(30.0, calc("200*15%", d)!!, 1e-12)
+            assertEquals(2.5, calc("10÷4", d)!!, 0.0)
+            // Not sums: app names, lone numbers, broken or undefined expressions.
+            for (q in listOf("", "Spotify", "2048", "-5", "7-Eleven", "1+", "(1+2", "1/0", "1..2+1", "2**3", "1.50.000+1", "1,5,0+1")) assertNull(q, calc(q, d))
+            assertNull(calc("(".repeat(5000) + "1" + ")".repeat(5000), d)) // pasted junk must not overflow the stack
+        }
+    }
+
+    @Test
+    fun calcReadsNumbersTheWayTheCountryWritesThem() {
+        // [query, decimal mark, result as shown]
+        val cases = listOf(
+            Triple("1.500.000/12", ',', "125.000"),
+            Triple("1.500,50 + 200", ',', "1.700,5"),
+            Triple("1.500+200", ',', "1.700"),
+            Triple("1,5 * 2", ',', "3"),
+            Triple("1.5 * 2", ',', "3"), // a lone '.' that is not grouping: still a decimal mark
+            Triple("12.345.678,9 * 1", ',', "12.345.678,9"),
+            Triple("1,500,000/12", '.', "125,000"),
+            Triple("1,500.50 + 200", '.', "1,700.5"),
+            Triple("1,500+200", '.', "1,700"),
+            Triple("1.500+200", '.', "201.5"),
+            Triple("1,5 * 2", '.', "3"),
+            // A percentage added or taken off is of what comes before it, as on a calculator.
+            Triple("1500 + 21%", ',', "1.815"),
+            Triple("1500 - 10%", ',', "1.350"),
+            Triple("200 * 10%", ',', "20"),
+            Triple("1/3", ',', "0,3333333333"),
+            // No grouping starts with 0 or with more than three digits: those marks are decimal ones.
+            Triple("0.500+1", ',', "1,5"),
+            Triple("0.125*8", ',', "1"),
+            Triple("0,125*8", '.', "1"),
+            Triple("1234.567+0", ',', "1.234,567"),
+            Triple("0*-1", ',', "0"), // no "-0"
+            Triple("0/-5", '.', "0"),
+        )
+        for ((q, d, shown) in cases) assertEquals("$q with '$d'", shown, formatNumber(calc(q, d)!!, d))
+        assertNull(calc("0.000.001+0", ','))
+        assertEquals("1.234,5", formatNumber(1234.5, ','))
+        assertEquals("1,234.5", formatNumber(1234.5, '.'))
+        assertEquals("1,5e-7", formatNumber(1.5e-7, ',')) // too small or too long: scientific
+        assertEquals("2e15", formatNumber(2e15, '.'))
+    }
+
+    @Test
+    fun searchAnswersSumsConversionsPhonesLinksAndAddresses() {
+        // [query, decimal mark, answer]
+        val cases = listOf(
+            Triple("1500 + 21%", ',', Answer.Value("1.815")),
+            // Conversions: a/en/to/in to a unit, else the metric or imperial counterpart; four significant digits.
+            Triple("5 km a mi", ',', Answer.Value("3,107 mi")),
+            Triple("5 km to mi", '.', Answer.Value("3.107 mi")),
+            Triple("5 kilómetros en millas", ',', Answer.Value("3,107 mi")),
+            Triple("5km", ',', Answer.Value("3,107 mi")),
+            Triple("100000 km", ',', Answer.Value("62.137 mi")), // no digits dropped off the whole part
+            Triple("10 m", ',', Answer.Value("32,81 ft")), // m is the metre
+            Triple("12 pulgadas", ',', Answer.Value("30,48 cm")),
+            Triple("5 in", '.', Answer.Value("12.7 cm")), // "in" is the inch when nothing follows it
+            Triple("5 in in cm", '.', Answer.Value("12.7 cm")),
+            Triple("1.500 m a km", ',', Answer.Value("1,5 km")),
+            Triple("3.5kg", ',', Answer.Value("7,716 lb")), // a lone '.' before a non-group: the decimal mark
+            Triple("70 kg", ',', Answer.Value("154,3 lb")),
+            Triple("1 oz", ',', Answer.Value("28,35 g")), // oz is mass…
+            Triple("1 fl oz", ',', Answer.Value("29,57 ml")), // …unless fluid
+            Triple("1 kg a oz", ',', Answer.Value("35,27 oz")),
+            Triple("2 tazas en ml", ',', Answer.Value("473,2 ml", usCup = true)),
+            Triple("1 l a tazas", ',', Answer.Value("4,227 tazas", usCup = true)), // kitchen units keep the word typed
+            Triple("3 cucharadas en ml", ',', Answer.Value("44,36 ml")),
+            Triple("1 tsp", '.', Answer.Value("4.929 ml")),
+            Triple("1 l", ',', Answer.Value("33,81 fl oz")),
+            Triple("350 f", ',', Answer.Value("176,7 °C")),
+            Triple("100 °C a °F", ',', Answer.Value("212 °F")),
+            Triple("-40 c", ',', Answer.Value("-40 °F")),
+            Triple("100 km/h a mph", ',', Answer.Value("62,14 mph")),
+            Triple("10 m/s", ',', Answer.Value("36 km/h")),
+            Triple("1 ha", ',', Answer.Value("2,471 ac")),
+            Triple("100 m2 a ft2", ',', Answer.Value("1.076 ft²")),
+            Triple("0.250 kg", ',', Answer.Value("0,5512 lb")),
+            Triple("12345.678 m", ',', Answer.Value("40.504 ft")),
+            Triple("-0 m", ',', Answer.Value("0 ft")),
+            // Next to a volume, oz is the fluid ounce.
+            Triple("8 oz a ml", ',', Answer.Value("236,6 ml")),
+            Triple("1 taza a oz", ',', Answer.Value("8 fl oz", usCup = true)),
+            Triple("1 l a oz", ',', Answer.Value("33,81 fl oz")),
+            Triple("100 g a oz", ',', Answer.Value("3,527 oz")),
+            // Phones: 8 to 15 digits, after a + or in groups; never also a sum.
+            Triple("11 5555-1234", ',', Answer.Phone("1155551234")),
+            Triple("011 15 5555-1234", ',', Answer.Phone("0111555551234")),
+            Triple("(011) 4555-1234", ',', Answer.Phone("01145551234")),
+            Triple("+54 9 11 5555-1234", ',', Answer.Phone("+5491155551234")),
+            Triple("+5491155551234", ',', Answer.Phone("+5491155551234")),
+            Triple("555-123-4567", '.', Answer.Phone("5551234567")),
+            Triple("1-800-555-1234", '.', Answer.Phone("18005551234")),
+            Triple("11-5555-1234", ',', Answer.Phone("1155551234")),
+            Triple("011-4555-1234", ',', Answer.Phone("01145551234")),
+            Triple("0800-333-1234", ',', Answer.Phone("08003331234")),
+            Triple("02944-42-1234", ',', Answer.Phone("02944421234")), // a five-digit area code with its 0
+            Triple("11  5555-1234", ',', Answer.Phone("1155551234")), // pasted with a double space
+            Triple("(011)-4555-1234", ',', Answer.Phone("01145551234")),
+            Triple("1155559999", ',', Answer.Phone("1155559999")), // digits alone, as many as a phone has
+            Triple("45551234", ',', Answer.Phone("45551234")),
+            // Subtractions stay sums: two groups, or a group no phone has (five digits or more, without a leading 0).
+            Triple("1000-250", ',', Answer.Value("750")),
+            Triple("1500000-250000", ',', Answer.Value("1.250.000")),
+            Triple("25000-7500", ',', Answer.Value("17.500")),
+            Triple("1500-200-300", ',', Answer.Value("1.000")),
+            Triple("25000-7500-1500", ',', Answer.Value("16.000")),
+            Triple("50000-12000-3500", ',', Answer.Value("34.500")),
+            Triple("150000-25000-1000", ',', Answer.Value("124.000")),
+            Triple("150000-35000-1200", ',', Answer.Value("113.800")),
+            Triple("29-10-2024", ',', Answer.Value("-2.005")), // a date is no phone
+            // Links and e-mail addresses.
+            Triple("google.com", ',', Answer.Link("https://google.com")),
+            Triple("www.mercadolibre.com.ar/ofertas", ',', Answer.Link("https://www.mercadolibre.com.ar/ofertas")),
+            Triple("http://example.org/a?b=1", ',', Answer.Link("http://example.org/a?b=1")),
+            Triple("HTTPS://Example.com/A", ',', Answer.Link("https://Example.com/A")), // Android matches schemes in lower case
+            Triple(" ana@example.com ", ',', Answer.Email("ana@example.com")),
+            Triple("mailto:x@y.com", ',', Answer.Email("x@y.com")),
+        )
+        for ((q, d, a) in cases) assertEquals("$q with '$d'", a, answer(q, d))
+        // Nothing to answer: app names, lone numbers too short for a phone, mixed dimensions.
+        for (q in listOf("", "Spotify", "Mi Fit", "4 in a row", "km", "5 km a kg", "1.500", "a.b", "1234567", "1234 567")) {
+            assertNull(q, answer(q, ','))
+        }
+    }
+
+    @Test
+    fun whatsAppTakesArgentineMobilesWithTheNineAfterTheCountryCode() {
+        // What PhoneNumberUtils.formatNumberToE164 gives for "11 5555-1234" and for "011 15 5555-1234" in AR.
+        assertEquals("5491155551234", whatsAppNumber("+541155551234"))
+        assertEquals("5491155551234", whatsAppNumber("+5491155551234"))
+        assertEquals("14155550123", whatsAppNumber("+14155550123"))
+        assertEquals("59899123456", whatsAppNumber("+59899123456")) // Uruguay starts with 5 too
+    }
+
+    @Test
+    fun theNumberConventionFollowsThePhoneUnlessChosen() {
+        assertNull(parseLayout("""{"dock":[[]],"desktop":[[]],"tabs":[]}""").decimal)
+        assertNull(parseLayout(Layout().toJson()).decimal) // null leaves the key out
+        assertEquals(',', parseLayout(Layout(decimal = ',').toJson()).decimal)
+        assertNull(parseLayout("""{"dock":[[]],"desktop":[[]],"tabs":[],"decimal":"x"}""").decimal)
     }
 
     @Test
@@ -207,6 +409,74 @@ class ModelTest {
         assertEquals(0, layout.withoutPage(2).defaultPage) // the main page itself: the first one takes over
         val single = Layout(desktop = listOf(listOf(a)))
         assertEquals(single, single.withoutPage(0)) // the last page stays
+    }
+
+    @Test
+    fun movingAPageTakesTheMainPageAlong() {
+        val a = listOf<Item>(Item.Icon(App("a/a.A#0"), "A", Cell(0f, 0f)))
+        val b = listOf<Item>(Item.Icon(App("b/b.B#0"), "B", Cell(0f, 0f)))
+        val c = emptyList<Item>()
+        val layout = Layout(desktop = listOf(a, b, c), defaultPage = 1)
+        fun moved(from: Int, to: Int) = layout.withPageMoved(from, to).let { it.desktop to it.defaultPage }
+        assertEquals(listOf(b, a, c) to 0, moved(1, 0)) // the main page itself
+        assertEquals(listOf(b, c, a) to 0, moved(0, 2)) // a page across it
+        assertEquals(listOf(a, c, b) to 2, moved(2, 1))
+        assertEquals(listOf(a, b, c) to 1, moved(0, 0))
+        assertEquals(layout, layout.withPageMoved(0, 3)) // off the end: nothing changes
+        assertEquals(listOf("x", "z", "y"), listOf("x", "y", "z").shifted(2, 1)) // dock pages and tabs move the same way
+    }
+
+    @Test
+    fun movingAnItemToAnotherPageKeepsItsSpotWhenFree() {
+        val a = Item.Icon(App("a/a.A#0"), "A", Cell(2f, 3f))
+        val b = Item.Icon(App("b/b.B#0"), "B", Cell(2f, 3f))
+        val w = Item.Widget("w", 7, Cell(0f, 0f, 5f, 2f))
+        val full = Item.Widget("f", 1, Cell(0f, 0f, 5f, 5f))
+        val layout = Layout(desktop = listOf(listOf(a, w), listOf(b), listOf(full)))
+        assertEquals(listOf(b, w), layout.moved(0, w, 1, w.cell).desktop[1]) // its own spot, free there
+        // Taken: the nearest free spot of its size.
+        assertEquals(listOf(listOf(w), listOf(b, a.copy(cell = Cell(2f, 2f)))), layout.moved(0, a, 1, a.cell).desktop.take(2))
+        assertEquals(layout, layout.moved(0, a, 2, a.cell)) // no room: nothing changes, so the menu can say so
+    }
+
+    @Test
+    fun auditListsWhatIsBrokenTwiceOrEmpty() {
+        val gone = App("gone/g.G#0")
+        val mail = App("m/m.Mail#0")
+        val spotify = App("s/s.S#0")
+        val maps = App("g/g.Maps#0")
+        val deadShortcut = Shortcut("x", "1", "X")
+        val ok = Item.Widget("w/w.P", 0, Cell(0f, 0f, 2f, 1f)) // unbound, as a Nova import leaves it, but its app is there
+        val orphan = Item.Widget("o/o.P", 0, Cell(2f, 0f, 2f, 1f))
+        val dead = Item.Widget("d/d.P", 5, Cell(0f, 1f, 2f, 1f))
+        val goneIcon = Item.Icon(gone, "G", Cell(0f, 4f))
+        val mailIcon = Item.Icon(mail, "Mail", Cell(1f, 4f))
+        val shortcutIcon = Item.Icon(deadShortcut, "X", Cell(2f, 4f))
+        val alias = Item.Icon(App("m/m.Alias#0"), "Correo", Cell(0f, 0f)) // another activity of the same package
+        val spotifyIcons = listOf(Item.Icon(spotify, "S", Cell(0f, 0f)), Item.Icon(spotify, "S", Cell(1f, 0f)))
+        val layout = Layout(
+            desktop = listOf(listOf(ok, orphan, dead, goneIcon, mailIcon, shortcutIcon), listOf(alias), emptyList(), spotifyIcons),
+            dock = listOf(
+                listOf(DockIcon(mail, up = gone), DockIcon(gone), DockIcon(down = mail), DockIcon(maps), DockIcon(), DockIcon(gone)),
+                listOf(DockIcon(maps)) + List(4) { DockIcon() },
+            ),
+        )
+        // A paused work profile's app or one mid-update is alive while the app list still knows it: [alive] decides.
+        val audit = layout.audit({ it != gone && it != deadShortcut }) { it != orphan && it != dead }
+        assertEquals(
+            listOf(
+                Place.Desktop(0, orphan), Place.Desktop(0, dead), Place.Desktop(0, goneIcon), Place.Desktop(0, shortcutIcon),
+                Place.Dock(0, 0, gone, Swipe.UP), Place.Dock(0, 1, gone), // the sixth icon is past dockSize, hidden: left alone
+            ),
+            audit.broken,
+        )
+        // By package, across pages or the dock and a page; a dock swipe is no icon, and two on one page or in the dock are no twins.
+        assertEquals(listOf(listOf(Place.Desktop(0, mailIcon), Place.Desktop(1, alias), Place.Dock(0, 0, mail))), audit.twins)
+        assertEquals(listOf(2), audit.empty)
+        assertEquals(7, audit.size) // twins may be on purpose: listed, not counted
+        // A lone empty page is not offered: the last page stays, the main one when all are empty.
+        assertEquals(0, Layout().audit({ true }) { true }.size)
+        assertEquals(listOf(0, 2), Layout(desktop = List(3) { emptyList() }, defaultPage = 1).audit({ true }) { true }.empty)
     }
 
     @Test

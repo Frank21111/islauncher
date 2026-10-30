@@ -11,6 +11,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.DocumentsContract
 import android.provider.Settings
+import android.telephony.PhoneNumberUtils
 import android.util.SizeF
 import android.view.MotionEvent
 import android.view.View
@@ -91,6 +92,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
@@ -124,6 +126,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -195,10 +198,12 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.delay
+import java.text.DateFormat
 import java.text.NumberFormat
+import java.util.Date
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.abs
+import kotlin.math.round
 import kotlin.math.roundToInt
 
 // Sizes and colours measured on Nova screenshots (448 dp wide).
@@ -237,6 +242,7 @@ private const val PAUSE_STEP_SECONDS = 5 // added for each time it was opened to
 sealed interface Popup {
     data class DesktopMenu(val page: Int, val at: Offset) : Popup
     data class ItemMenu(val page: Int, val item: Item) : Popup
+    data class MoveItem(val page: Int, val item: Item) : Popup
     data class DockMenu(val virtualPage: Int, val slot: Int) : Popup
     data class AppMenu(val id: AppId) : Popup
     data class TabMenu(val index: Int) : Popup
@@ -247,6 +253,8 @@ sealed interface Popup {
     class Confirm(val title: String, val text: String, val action: String, val onYes: () -> Unit) : Popup
     class Grid(val title: String, val columns: Int, val rows: Int, val note: (Int, Int) -> String, val onDone: (Int, Int) -> Unit) : Popup
     data class EditTab(val index: Int) : Popup
+    data object Numbers : Popup
+    data object PausedApps : Popup
 
     /** Apps to tick, like the hidden ones: [ids] reads the set from a layout, [put] writes it back. */
     class Checklist(val title: String, val ids: (Layout) -> Set<AppId>, val put: (Layout, Set<AppId>) -> Layout) : Popup
@@ -403,7 +411,14 @@ private class Mover(private val l: Launcher, private val haptic: (HapticFeedback
         val want = d.item.cell.copy(x = at.x / bounds.width * l.layout.columns, y = at.y / bounds.height * l.layout.rows)
         val before = l.layout
         l.update { it.moved(d.page, d.item, page, want) }
-        if (l.layout === before) refuse(R.string.desktop_no_room_page) else haptic(HapticFeedbackType.Confirm)
+        if (l.layout === before) return refuse(l.getString(R.string.desktop_no_room_page))
+        haptic(HapticFeedbackType.Confirm)
+        placedPaused(app)
+    }
+
+    /** A paused app Ajustes hides is placed all the same, out of sight until it resumes: say so. */
+    private fun placedPaused(app: Target.App?) {
+        if (l.hides(app)) l.toast(l.getString(R.string.paused_placed, l.labelOf(app)))
     }
 
     // Only an empty slot: replacing a dock icon by accident would lose its swipes' setup with no undo.
@@ -411,7 +426,8 @@ private class Mover(private val l: Launcher, private val haptic: (HapticFeedback
         val page = dockPage()
         val size = l.layout.dockSize
         val slot = ((d.pointer.x - dock.left) / dock.width * size).toInt().coerceIn(0, size - 1)
-        if (l.layout.dock[page][slot].tap != null) return refuse(R.string.dock_slot_taken)
+        val tap = l.layout.dock[page][slot].tap
+        if (tap != null) return refuse(if (l.hides(tap)) l.getString(R.string.dock_slot_paused, l.labelOf(tap)) else l.getString(R.string.dock_slot_taken))
         l.update { layout ->
             layout.copy(
                 dock = layout.dock.replaced(page) { it.replaced(slot) { icon -> icon.copy(tap = app) } },
@@ -419,11 +435,12 @@ private class Mover(private val l: Launcher, private val haptic: (HapticFeedback
             )
         }
         haptic(HapticFeedbackType.Confirm)
+        placedPaused(app)
     }
 
-    private fun refuse(@StringRes why: Int) {
+    private fun refuse(why: String) {
         haptic(HapticFeedbackType.Reject)
-        l.toast(l.getString(why))
+        l.toast(why)
     }
 }
 
@@ -442,9 +459,10 @@ private fun DesktopPage(l: Launcher, mover: Mover, page: Int) {
                         }
                     },
                     onLongPress = { at ->
-                        // A widget that ignores touches lets the press through; the widget opens its own menu.
+                        // A widget that ignores touches lets the press through; the widget opens its own menu. A hidden
+                        // paused app's spot looks empty, so it takes the press too.
                         val point = Cell(at.x / size.width * l.layout.columns, at.y / size.height * l.layout.rows, 0f, 0f)
-                        if (l.layout.desktop.getOrNull(page).orEmpty().none { it.cell.overlaps(point) }) {
+                        if (l.layout.desktop.getOrNull(page).orEmpty().none { it.cell.overlaps(point) && !(it is Item.Icon && l.hides(it.target)) }) {
                             haptic(HapticFeedbackType.LongPress)
                             l.popup = Popup.DesktopMenu(page, at)
                         }
@@ -455,7 +473,8 @@ private fun DesktopPage(l: Launcher, mover: Mover, page: Int) {
         val cell = DpSize(maxWidth / l.layout.columns, maxHeight / l.layout.rows)
         SideEffect { l.cellSize = cell }
         val icon = iconSize(ICON, cell.width, cell.height - LABEL_SPACE)
-        for (item in l.layout.desktop.getOrNull(page).orEmpty()) key(item) {
+        // A paused app's icon Ajustes hides keeps its spot, saved, until the pause ends.
+        for (item in l.layout.desktop.getOrNull(page).orEmpty().filterNot { it is Item.Icon && l.hides(it.target) }) key(item) {
             val size = DpSize(cell.width * item.cell.w, cell.height * item.cell.h)
             val at = Modifier.offset(cell.width * item.cell.x, cell.height * item.cell.y).size(size)
             Movable(l, mover, page, item, { l.popup = Popup.ItemMenu(page, item) }, at) {
@@ -579,9 +598,28 @@ private fun ItemMenu(l: Launcher, page: Int, item: Item) {
     val shortcuts = rememberShortcuts(l, app.takeIf { target is Target.App }, open) // a pinned shortcut's icon lists none
     DropdownMenu(open && shortcuts != null, { l.popup = null }) {
         if (app != null) AppShortcuts(l, app, shortcuts.orEmpty())
+        if (item is Item.Icon) MenuItem(l, stringResource(R.string.rename)) {
+            // This icon's label only: the drawer and search keep the app's name.
+            l.popup = Popup.Rename(l.getString(R.string.desktop_rename_icon), item.label) { name ->
+                l.updatePage(page) { items -> items.map { if (it == item) item.copy(label = name) else it } }
+            }
+        }
+        if (l.layout.desktop.size > 1) MenuItem(l, stringResource(R.string.desktop_move_to_page)) { l.popup = Popup.MoveItem(page, item) }
         if (app != null) MenuItem(l, stringResource(R.string.menu_app_info)) { l.showInfo(app) }
+        if (app != null && target is Target.App && app.removable) MenuItem(l, stringResource(R.string.uninstall)) { l.uninstall(app) }
         if (item is Item.Widget && item.widgetId != 0) MenuItem(l, stringResource(R.string.widget_reconfigure)) { l.unbind(page, item) }
         MenuItem(l, stringResource(R.string.remove)) { l.remove(page, item) }
+    }
+    // The other pages, the main one marked: the item keeps its spot there if free, else takes the nearest one.
+    DropdownMenu(l.popup == Popup.MoveItem(page, item), { l.popup = null }) {
+        for (to in l.layout.desktop.indices) if (to != page) {
+            val name = stringResource(R.string.settings_page, to + 1)
+            MenuItem(l, if (to == l.layout.defaultPage) "$name · ${stringResource(R.string.desktop_page_main)}" else name) {
+                val before = l.layout
+                l.update { it.moved(page, item, to, item.cell) }
+                if (l.layout === before) l.toast(l.getString(R.string.desktop_no_room_page_n, to + 1))
+            }
+        }
     }
 }
 
@@ -629,6 +667,7 @@ private fun Dock(l: Launcher, mover: Mover) {
 private fun DockSlot(l: Launcher, virtualPage: Int, slot: Int, icon: DockIcon, iconSize: Dp, modifier: Modifier) {
     val page = virtualPage % l.layout.dock.size
     val haptic = rememberHaptic(l)
+    val tap = icon.tap?.takeUnless(l::hides) // a paused app Ajustes hides: an empty slot until the pause ends
     Box(
         modifier
             .fillMaxHeight()
@@ -655,7 +694,7 @@ private fun DockSlot(l: Launcher, virtualPage: Int, slot: Int, icon: DockIcon, i
                 interactionSource = null,
                 indication = PressScale,
                 hapticFeedbackEnabled = false, // its own would bypass the setting
-                onClick = { l.open(icon.tap) },
+                onClick = { l.open(tap) },
                 onLongClick = {
                     haptic(HapticFeedbackType.LongPress)
                     l.popup = Popup.DockMenu(virtualPage, slot)
@@ -663,7 +702,7 @@ private fun DockSlot(l: Launcher, virtualPage: Int, slot: Int, icon: DockIcon, i
             ),
         contentAlignment = Alignment.Center,
     ) {
-        icon.tap?.let { TargetIcon(l, it, iconSize) }
+        tap?.let { TargetIcon(l, it, iconSize) }
         val app = l.appOf(icon.tap)
         val open = l.popup == Popup.DockMenu(virtualPage, slot)
         val shortcuts = rememberShortcuts(l, app.takeIf { icon.tap is Target.App }, open)
@@ -682,6 +721,7 @@ private fun DockSlot(l: Launcher, virtualPage: Int, slot: Int, icon: DockIcon, i
                 pick(l.getString(R.string.dock_pick_swipe_down)) { d, t -> d.copy(down = t) }
             }
             app?.let { MenuItem(l, stringResource(R.string.menu_app_info)) { l.showInfo(it) } }
+            if (app != null && icon.tap is Target.App && app.removable) MenuItem(l, stringResource(R.string.uninstall)) { l.uninstall(app) }
         }
     }
 }
@@ -786,7 +826,8 @@ private fun Drawer(l: Launcher, mover: Mover) {
     val pager = rememberPagerState { tabs.size } // one page per tab, swiped sideways as in Nova
     val searching = query.isNotBlank()
     val results = if (searching) search(l.apps, query, l::usage) { it.label } else emptyList() // the most used first among equals
-    fun appsOf(tab: Int) = tabs.getOrNull(tab)?.let { tabApps(it, tabs, l.apps, l.find, l.layout.hidden) } ?: l.apps
+    val tabbed = l.tabbed
+    fun appsOf(tab: Int) = tabs.getOrNull(tab)?.let { tabApps(it, tabs, tabbed, l.find, l.layout.hidden) } ?: tabbed
     val haptic = rememberHaptic(l)
     // A pull keeps scrolling past the point that closed the drawer: only that point ticks.
     fun close() {
@@ -831,7 +872,9 @@ private fun Drawer(l: Launcher, mover: Mover) {
                 if (searching) {
                     val grid = rememberLazyGridState()
                     Box(Modifier.weight(1f)) {
-                        val sum = calc(query)
+                        val decimal = l.decimal
+                        // A bare "booking.com" or "mr.robot" is more likely an app's name: a link only where no app matches.
+                        val answer = remember(query, decimal) { answer(query, decimal) }?.takeUnless { it is Answer.Link && results.isNotEmpty() }
                         AppGrid(
                             l,
                             mover,
@@ -839,7 +882,7 @@ private fun Drawer(l: Launcher, mover: Mover) {
                             grid,
                             cell,
                             pullToClose,
-                            header = { sum?.let { item(span = { GridItemSpan(maxLineSpan) }) { CalcResult(it) } } },
+                            header = { answer?.let { item(span = { GridItemSpan(maxLineSpan) }) { SearchAnswer(l, it, decimal) } } },
                         ) {
                             item(span = { GridItemSpan(maxLineSpan) }) { SearchProviders(l, query) }
                         }
@@ -894,27 +937,67 @@ private fun AppGrid(
 /** Nova's icon size, shrunk to fit a smaller cell ([width] wide, [height] for the icon itself). */
 private fun iconSize(nova: Dp, width: Dp, height: Dp) = minOf(nova, width * ICON_SHARE, height).coerceAtLeast(16.dp)
 
-/** The result of a search that is a sum; a tap copies it. */
+private const val WHATSAPP = "com.whatsapp"
+
+/**
+ * What search answers besides apps ([answer]), above them: a sum or conversion a tap copies, or what can be done with
+ * a phone number, link or e-mail address, as bubbles in the "Buscar con" row's shape. Each opens through
+ * [Launcher.startIntent], so a poison app pauses; nothing typed is kept.
+ */
 @Composable
-private fun CalcResult(value: Double) {
+private fun SearchAnswer(l: Launcher, answer: Answer, decimal: Char) {
+    class Action(val label: String, val what: String, val intent: Intent)
+    val (title, actions) = when (answer) {
+        is Answer.Value -> return ValueAnswer(answer, decimal)
+        is Answer.Phone -> {
+            val number = answer.number
+            // wa.me wants the international form; without one (no country to read a national number by), no WhatsApp.
+            val whatsApp = remember(number, l.country) {
+                (PhoneNumberUtils.formatNumberToE164(number, l.country) ?: number.takeIf { it.startsWith('+') })?.let(::whatsAppNumber)
+            }
+            stringResource(R.string.answer_phone) to listOfNotNull(
+                Action(stringResource(R.string.answer_call), stringResource(R.string.open_target_phone), Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", number, null))),
+                whatsApp?.takeIf { l.appOf(Target.Shortcut(WHATSAPP, "", "")) != null }?.let {
+                    Action("WhatsApp", "WhatsApp", Intent(Intent.ACTION_VIEW, "https://wa.me/$it".toUri()).setPackage(WHATSAPP))
+                },
+                Action(stringResource(R.string.answer_sms), stringResource(R.string.open_target_messages), Intent(Intent.ACTION_SENDTO, Uri.fromParts("smsto", number, null))),
+            )
+        }
+        is Answer.Link -> stringResource(R.string.answer_link) to listOf(
+            Action(stringResource(R.string.answer_open), stringResource(R.string.open_target_link), Intent(Intent.ACTION_VIEW, answer.url.toUri())),
+        )
+        is Answer.Email -> stringResource(R.string.answer_email) to listOf(
+            Action(stringResource(R.string.answer_write), stringResource(R.string.open_target_email), Intent(Intent.ACTION_SENDTO, Uri.fromParts("mailto", answer.address, null))),
+        )
+    }
+    Column(Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp)) {
+        Text(title, color = Color.White, fontSize = 16.sp)
+        // Scrolls rather than clips a third bubble at a large font size.
+        Row(Modifier.padding(top = 16.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (a in actions) Bubble(a.label, false, Modifier.clickable { l.startIntent(a.intent, a.what) })
+        }
+    }
+}
+
+/** A sum's or a conversion's result; a tap copies it. */
+@Composable
+private fun ValueAnswer(value: Answer.Value, decimal: Char) {
     val context = LocalContext.current
     val clipLabel = stringResource(R.string.search_calc_result)
-    val text = remember(value) {
-        // Scientific notation where ten decimals would round to 0 or the digits run off the screen.
-        if (value != 0.0 && abs(value) < 1e-6 || abs(value) >= 1e15) "%.6g".format(value)
-        else NumberFormat.getNumberInstance().apply { maximumFractionDigits = 10 }.format(value)
-    }
     Row(
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 8.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(TAB_OFF)
-            .clickable { context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(clipLabel, text)) }
+            .clickable { context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(clipLabel, value.text)) }
             .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("= $text", Modifier.weight(1f), color = Color.White, fontSize = 28.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(Modifier.weight(1f)) {
+            Text("= ${value.text}", color = Color.White, fontSize = 28.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (value.usCup) Text(stringResource(R.string.search_us_cup, formatNumber(round(US_CUP_ML * 10) / 10, decimal)), color = TAB_OFF_TEXT, fontSize = 14.sp)
+        }
         Text(stringResource(R.string.copy), color = TAB_OFF_TEXT, fontSize = 14.sp)
     }
 }
@@ -978,11 +1061,7 @@ private fun Tabs(l: Launcher, selected: Int, onSelect: (Int) -> Unit) {
                             l.update { it.copy(tabs = it.tabs.replaced(i) { t -> t.copy(name = name) }) }
                         }
                     }
-                    MenuItem(l, stringResource(R.string.drawer_new_tab)) {
-                        l.popup = Popup.Rename(l.getString(R.string.drawer_new_tab), "") { name ->
-                            l.update { it.copy(tabs = it.tabs + Tab(name, emptySet(), hideApps = true)) }
-                        }
-                    }
+                    MenuItem(l, stringResource(R.string.drawer_new_tab)) { l.popup = newTab(l) }
                     if (tab.apps != null) {
                         MenuItem(l, stringResource(R.string.delete)) {
                             onSelect(0)
@@ -1038,7 +1117,7 @@ private fun DrawerApp(l: Launcher, mover: Mover, app: App, height: Dp, icon: Dp)
             l.layout.tabs.forEachIndexed { i, tab ->
                 val members = tab.apps ?: return@forEachIndexed
                 val inTab = members.any { l.find(it) == app }
-                DropdownMenuItem({ Text("${if (inTab) "✓" else "○"} ${tab.name}") }, onClick = {
+                DropdownMenuItem({ Text(ticked(inTab, tab.name)) }, onClick = {
                     l.update { it.copy(tabs = it.tabs.replaced(i) { t -> t.copy(apps = members.toggled(app, app.id, l.find)) }) }
                 })
             }
@@ -1051,6 +1130,7 @@ private fun DrawerApp(l: Launcher, mover: Mover, app: App, height: Dp, icon: Dp)
                 l.update { it.copy(poisons = it.poisons.toggled(app, app.id, l.find)) }
             }
             MenuItem(l, stringResource(R.string.menu_app_info)) { l.showInfo(app) }
+            if (app.removable) MenuItem(l, stringResource(R.string.uninstall)) { l.uninstall(app) }
         }
     }
 }
@@ -1211,6 +1291,9 @@ private fun AppShortcuts(l: Launcher, app: App, shortcuts: List<AppShortcut>) {
     }
     HorizontalDivider()
 }
+
+/** A menu entry's [label] marked on or off: a tab the app is in, the option chosen. */
+private fun ticked(on: Boolean, label: String) = "${if (on) "✓" else "○"} $label"
 
 /** A menu entry that closes the menu, then acts (the action may open another popup). */
 @Composable
@@ -1644,35 +1727,46 @@ private enum class Section(@StringRes val title: Int, val glyph: Glyph) {
     DOCK(R.string.settings_dock, DOCK_BAR),
     GESTURES(R.string.settings_gestures, TAP),
     BACKUP(R.string.settings_backup, RESTORE),
+    TIDY(R.string.tidy, TRASH), // opened from DESKTOP, not from the main list
+    UNUSED(R.string.unused, TRASH), // opened from DRAWER, not from the main list
 }
 
 @Composable
 private fun SettingsScreen(l: Launcher) {
     var section by remember { mutableStateOf<Section?>(null) }
-    val back = { if (section != null) section = null else l.settingsOpen = false }
+    val back = {
+        if (section == null) l.settingsOpen = false
+        else section = when (section) {
+            Section.TIDY -> Section.DESKTOP
+            Section.UNUSED -> Section.DRAWER
+            else -> null
+        }
+    }
     BackHandler(onBack = back)
     // Clear, over the hidden Home, so a preview strip shows the wallpaper; a Surface still takes every touch.
     Surface(Modifier.fillMaxSize(), color = Color.Transparent, contentColor = MaterialTheme.colorScheme.onSurface) {
         val s = section
-        // Separate branches, so the main list and each section get their own scroll position.
-        if (s == null) MainList(l) { section = it } else Column {
+        // Separate branches (and keys), so the main list and each section get their own scroll position.
+        if (s == null) MainList(l) { section = it } else key(s) { Column {
             Bar(stringResource(s.title), back)
             val layout = l.layout
             when (s) {
                 Section.DESKTOP -> {
                     // The main page's own icons, in reading order.
                     val mine = layout.desktop.getOrNull(layout.defaultPage).orEmpty().filterIsInstance<Item.Icon>()
-                        .sortedWith(compareBy({ it.cell.y }, { it.cell.x })).map { it.target }
+                        .sortedWith(compareBy({ it.cell.y }, { it.cell.x })).map { it.target }.filterNot(l::hides)
                     PreviewIcons(l, mine.ifEmpty { l.apps.map { Target.App(it.id) } }, layout.columns, ICON, labels = true, Modifier.height(148.dp))
                 }
                 Section.DRAWER -> DrawerPreview(l, layout)
-                Section.DOCK -> PreviewIcons(l, layout.dock.firstOrNull().orEmpty().take(layout.dockSize).map { it.tap }, layout.dockSize, ICON, labels = false, Modifier.height(120.dp))
+                Section.DOCK -> PreviewIcons(l, layout.dock.firstOrNull().orEmpty().take(layout.dockSize).map { it.tap?.takeUnless(l::hides) }, layout.dockSize, ICON, labels = false, Modifier.height(120.dp))
                 else -> Unit
             }
             Column(Modifier.weight(1f).fillMaxWidth().background(Color.Black).verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 16.dp)) {
                 when (s) {
-                    Section.DESKTOP -> DesktopSettings(l, layout)
-                    Section.DRAWER -> DrawerSettings(l, layout)
+                    Section.DESKTOP -> DesktopSettings(l, layout) { section = Section.TIDY }
+                    Section.TIDY -> TidySettings(l, layout)
+                    Section.DRAWER -> DrawerSettings(l, layout) { section = Section.UNUSED }
+                    Section.UNUSED -> UnusedSettings(l, layout)
                     Section.DOCK -> DockSettings(l, layout)
                     Section.GESTURES -> {
                         Header(stringResource(R.string.home_screen), divider = false)
@@ -1689,7 +1783,7 @@ private fun SettingsScreen(l: Launcher) {
                     Section.BACKUP -> BackupSettings(l)
                 }
             }
-        }
+        } }
     }
 }
 
@@ -1711,6 +1805,7 @@ private fun MainList(l: Launcher, open: (Section) -> Unit) {
                     " · " + stringResource(if (layout.haptics) R.string.haptics else R.string.haptics_off)
                 Section.BACKUP -> l.backupFolder?.let { stringResource(R.string.settings_backup_summary_weekly, folderName(l, it)) }
                     ?: stringResource(R.string.settings_backup_summary)
+                Section.TIDY, Section.UNUSED -> continue
             }
             SettingRow(stringResource(s.title), summary, { open(s) }, s.glyph)
         }
@@ -1757,15 +1852,34 @@ private fun DrawerPreview(l: Launcher, layout: Layout) = Column(Modifier.fillMax
     LazyRow(Modifier.padding(top = TAB_GAP), contentPadding = PaddingValues(horizontal = 24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         itemsIndexed(layout.tabs) { i, tab -> Bubble(tab.name, i == 0, Modifier) }
     }
-    val apps = layout.tabs.firstOrNull()?.let { tabApps(it, layout.tabs, l.apps, l.find, layout.hidden) } ?: l.apps
+    val apps = layout.tabs.firstOrNull()?.let { tabApps(it, layout.tabs, l.tabbed, l.find, layout.hidden) } ?: l.tabbed
     PreviewIcons(l, apps.take(layout.drawerColumns).map { Target.App(it.id) }, layout.drawerColumns, DRAWER_ICON, labels = true, Modifier.height(128.dp).padding(horizontal = 8.dp))
 }
 
 @Composable
-private fun DesktopSettings(l: Launcher, layout: Layout) {
+private fun DesktopSettings(l: Launcher, layout: Layout, onTidy: () -> Unit) {
     Header(stringResource(R.string.settings_layout), divider = false)
     GridSetting(l, stringResource(R.string.desktop_grid), layout.columns, layout.rows, { c, r -> gridNote(l, l.layout, c, r) }) { c, r ->
         l.update { it.withGrid(c, r) }
+    }
+    val attention = rememberAudit(l, layout)?.size
+    SettingRow(
+        stringResource(R.string.tidy),
+        when (attention) {
+            null -> null
+            0 -> stringResource(R.string.tidy_all_clear)
+            else -> pluralStringResource(R.plurals.tidy_summary, attention, attention)
+        },
+        onTidy,
+    )
+    // Focus mode and Digital Wellbeing pause apps; greyed (as in Nova) or left out of the desktop, dock and drawer tabs.
+    SettingRow(stringResource(R.string.paused_apps), stringResource(if (layout.hideSuspended) R.string.paused_hide_summary else R.string.paused_dim_summary), { l.popup = Popup.PausedApps }) {
+        Box {
+            DropdownMenu(l.popup == Popup.PausedApps, { l.popup = null }) {
+                MenuItem(l, ticked(!layout.hideSuspended, stringResource(R.string.paused_dim))) { l.update { it.copy(hideSuspended = false) } }
+                MenuItem(l, ticked(layout.hideSuspended, stringResource(R.string.paused_hide))) { l.update { it.copy(hideSuspended = true) } }
+            }
+        }
     }
     Header(stringResource(R.string.settings_pages))
     layout.desktop.forEachIndexed { i, items ->
@@ -1775,6 +1889,10 @@ private fun DesktopSettings(l: Launcher, layout: Layout) {
             if (items.isEmpty()) stringResource(R.string.settings_page_empty) else pluralStringResource(R.plurals.count_items, items.size, items.size),
         )
         SettingRow(stringResource(R.string.settings_page, i + 1), summary.joinToString(" · ")) {
+            if (layout.desktop.size > 1) {
+                IconAction(UP, stringResource(R.string.move_up), enabled = i > 0) { l.update { it.withPageMoved(i, i - 1) } }
+                IconAction(DOWN, stringResource(R.string.move_down), enabled = i < layout.desktop.lastIndex) { l.update { it.withPageMoved(i, i + 1) } }
+            }
             // Nova marks the main page with a house; another page's house makes it the main one.
             if (main) GlyphIcon(HOUSE, ACCENT, Modifier.padding(12.dp))
             else IconAction(HOUSE, stringResource(R.string.desktop_make_main)) { l.update { it.copy(defaultPage = i) } }
@@ -1803,8 +1921,98 @@ private fun gridNote(context: Context, layout: Layout, columns: Int, rows: Int):
     return note + if (added == 0) "" else " " + res.getQuantityString(R.plurals.desktop_grid_note_pages_added, added, added)
 }
 
+/**
+ * Ajustes → Escritorio → Ordenar: what is broken, in more than one place or empty, worked out when it opens and after
+ * each removal. Nothing goes unless tapped; "Quitar todo lo roto" leaves twins and pages alone.
+ */
 @Composable
-private fun DrawerSettings(l: Launcher, layout: Layout) {
+private fun TidySettings(l: Launcher, layout: Layout) {
+    val audit = rememberAudit(l, layout) ?: return
+    if (audit.size == 0 && audit.twins.isEmpty()) return SettingRow(stringResource(R.string.tidy_all_clear), stringResource(R.string.tidy_all_clear_summary))
+    @Composable
+    fun row(place: Place) = SettingRow(placeName(l, place), placeWhere(l, place)) { IconAction(TRASH, stringResource(R.string.remove)) { l.remove(place) } }
+    if (audit.broken.isNotEmpty()) {
+        Header(stringResource(R.string.tidy_broken), divider = false)
+        val n = audit.broken.size
+        SettingRow(stringResource(R.string.tidy_remove_broken), stringResource(R.string.tidy_remove_broken_summary), {
+            l.popup = Popup.Confirm(
+                l.getString(R.string.tidy_remove_broken),
+                l.resources.getQuantityString(R.plurals.tidy_remove_broken_text, n, n),
+                l.getString(R.string.remove),
+            ) { audit.broken.forEach { l.remove(it) } } // by item and slot: no removal moves another
+        }) { GlyphIcon(TRASH, ACCENT, Modifier.padding(12.dp)) }
+        audit.broken.forEach { row(it) }
+    }
+    if (audit.twins.isNotEmpty()) {
+        Header(stringResource(R.string.tidy_twins), divider = audit.broken.isNotEmpty())
+        audit.twins.flatten().forEach { row(it) }
+    }
+    if (audit.empty.isNotEmpty()) {
+        Header(stringResource(R.string.tidy_empty_pages), divider = audit.broken.isNotEmpty() || audit.twins.isNotEmpty())
+        for (page in audit.empty) SettingRow(stringResource(R.string.settings_page, page + 1), stringResource(R.string.settings_page_empty)) {
+            // The list can lag a removal by a moment: only a page still empty goes.
+            IconAction(TRASH, stringResource(R.string.remove)) { l.update { if (it.desktop.getOrNull(page)?.isEmpty() == true) it.withoutPage(page) else it } }
+        }
+    }
+}
+
+/** [Launcher.audit] of [layout], worked out off the main thread (binder calls); null until the first one is in. */
+@Composable
+private fun rememberAudit(l: Launcher, layout: Layout): Audit? = // apps: a new list after each package change
+    produceState<Audit?>(null, layout, l.apps) { value = withContext(Dispatchers.IO) { l.audit(layout) } }.value
+
+/** What Ordenar calls [place]: its icon's label, else its app's name, or its package's once the app is gone. */
+private fun placeName(l: Launcher, place: Place): String {
+    fun name(t: Target) = when (t) {
+        is Target.App -> l.appOf(t)?.label ?: t.id.substringBefore('/')
+        is Target.Shortcut -> t.label.ifEmpty { t.pkg }
+    }
+    return when (place) {
+        is Place.Desktop -> when (val item = place.item) {
+            is Item.Icon -> item.label.ifBlank { name(item.target) }
+            is Item.Widget -> l.getString(R.string.tidy_widget, item.provider.substringBefore('/'))
+        }
+        is Place.Dock -> name(place.target)
+    }
+}
+
+/** "Página 2", or "Dock 1 · ícono 3 · deslizar ↑". */
+private fun placeWhere(l: Launcher, place: Place): String = when (place) {
+    is Place.Desktop -> l.getString(R.string.settings_page, place.page + 1)
+    is Place.Dock -> l.getString(R.string.tidy_dock, place.page + 1, place.slot + 1) + (place.swipe?.let { " · " + l.getString(R.string.tidy_swipe, it.arrow) } ?: "")
+}
+
+/**
+ * Ajustes → Cajón de apps → Sin abrir hace tiempo ([Launcher.unusedApps]): candidates to uninstall, worked out on open
+ * and after each package change. Its note says the launcher only sees its own opens.
+ */
+@Composable
+private fun UnusedSettings(l: Launcher, layout: Layout) {
+    val apps = remember(layout, l.apps) { l.unusedApps() }
+    Text(
+        pluralStringResource(R.plurals.unused_note, UNUSED_DAYS, UNUSED_DAYS),
+        Modifier.padding(start = 24.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontSize = 14.sp,
+        lineHeight = 17.sp,
+    )
+    when {
+        apps == null -> SettingRow(stringResource(R.string.unused_waiting), stringResource(R.string.unused_waiting_text, dayName(l.tracked), dayName(l.tracked + UNUSED_DAYS)))
+        apps.isEmpty() -> SettingRow(stringResource(R.string.unused_none), pluralStringResource(R.plurals.unused_none_summary, UNUSED_DAYS, UNUSED_DAYS))
+        else -> for (app in apps) {
+            SettingRow(app.label, l.lastOpen(app)?.let { stringResource(R.string.unused_last_open, dayName(it)) } ?: stringResource(R.string.unused_no_opens)) {
+                Box(Modifier.padding(end = 8.dp)) { TargetIcon(l, Target.App(app.id), 36.dp) }
+                IconAction(TRASH, stringResource(R.string.uninstall)) { l.uninstall(app) }
+            }
+        }
+    }
+}
+
+/** Day [day] (since 1970) as the phone writes dates: "3 nov 2026". */
+private fun dayName(day: Double): String = DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date((day * DAY_MS).toLong()))
+
+@Composable
+private fun DrawerSettings(l: Launcher, layout: Layout, onUnused: () -> Unit) {
     Header(stringResource(R.string.settings_layout), divider = false)
     val rowsNote = stringResource(R.string.drawer_grid_note)
     GridSetting(l, stringResource(R.string.drawer_grid), layout.drawerColumns, layout.drawerRows, { _, _ -> rowsNote }) { c, r ->
@@ -1812,18 +2020,17 @@ private fun DrawerSettings(l: Launcher, layout: Layout) {
     }
     Header(stringResource(R.string.settings_tabs))
     layout.tabs.forEachIndexed { i, tab ->
+        // Installed apps only, each once: an app under two of its ids, or uninstalled, is not shown twice or at all.
         val summary = if (tab.apps == null) stringResource(R.string.drawer_tab_all_apps)
-        else pluralStringResource(R.plurals.count_apps, tab.apps.size, tab.apps.size) +
+        else tab.apps.mapNotNull(l.find).toSet().size.let { n -> pluralStringResource(R.plurals.count_apps, n, n) } +
             if (tab.hideApps) " · " + stringResource(R.string.drawer_tab_hides_apps) else ""
-        fun move(to: Int) = l.update { it.copy(tabs = it.tabs.toMutableList().apply { add(to, removeAt(i)) }) }
+        fun move(to: Int) = l.update { it.copy(tabs = it.tabs.shifted(i, to)) }
         SettingRow(tab.name, summary, { l.popup = Popup.EditTab(i) }) {
             IconAction(UP, stringResource(R.string.move_up), enabled = i > 0) { move(i - 1) }
             IconAction(DOWN, stringResource(R.string.move_down), enabled = i < layout.tabs.lastIndex) { move(i + 1) }
         }
     }
-    AddRow(stringResource(R.string.drawer_add_tab)) {
-        l.popup = Popup.Rename(l.getString(R.string.drawer_new_tab), "") { name -> l.update { it.copy(tabs = it.tabs + Tab(name, emptySet(), hideApps = true)) } }
-    }
+    AddRow(stringResource(R.string.drawer_add_tab)) { l.popup = newTab(l) }
     Header(stringResource(R.string.settings_apps))
     val hidden = layout.hidden.mapNotNull(l.find).toSet().size
     SettingRow(
@@ -1846,9 +2053,37 @@ private fun DrawerSettings(l: Launcher, layout: Layout) {
             }
         },
     ) { layout.instead?.let { Box(Modifier.padding(end = 8.dp)) { TargetIcon(l, it, 36.dp) } } }
+    val unused = remember(layout, l.apps) { l.unusedApps() } // apps: a new list after each package change
+    SettingRow(
+        stringResource(R.string.unused),
+        when {
+            unused == null -> stringResource(R.string.unused_ready_on, dayName(l.tracked + UNUSED_DAYS))
+            unused.isEmpty() -> stringResource(R.string.unused_none)
+            else -> pluralStringResource(R.plurals.count_apps, unused.size, unused.size)
+        },
+        onUnused,
+    )
+    Header(stringResource(R.string.settings_search))
+    // How 1234.5 looks with each choice; automatic names the country's.
+    val formats = listOf(null to stringResource(R.string.search_numbers_auto, formatNumber(1234.5, l.countryDecimal)), ',' to formatNumber(1234.5, ','), '.' to formatNumber(1234.5, '.'))
+    SettingRow(stringResource(R.string.search_numbers), formats.first { it.first == layout.decimal }.second, { l.popup = Popup.Numbers }) {
+        Box { DropdownMenu(l.popup == Popup.Numbers, { l.popup = null }) { for ((d, label) in formats) MenuItem(l, ticked(d == layout.decimal, label)) { l.update { it.copy(decimal = d) } } } }
+    }
 }
 
-/** Renames drawer tab [i]; a tab of chosen apps can also leave the others or go. */
+/** Names a new drawer tab, then goes straight to choosing its apps. */
+private fun newTab(l: Launcher) = Popup.Rename(l.getString(R.string.drawer_new_tab), "") { name ->
+    val i = l.layout.tabs.size
+    l.update { it.copy(tabs = it.tabs + Tab(name, emptySet(), hideApps = true)) }
+    l.popup = tabChecklist(i, name)
+}
+
+/** The checklist of drawer tab [i]'s apps, titled [title]. */
+private fun tabChecklist(i: Int, title: String) = Popup.Checklist(title, { it.tabs.getOrNull(i)?.apps.orEmpty() }) { layout, ids ->
+    layout.copy(tabs = layout.tabs.replaced(i) { it.copy(apps = ids) })
+}
+
+/** Renames drawer tab [i]; a tab of chosen apps can also pick them, leave the others or go. */
 @Composable
 private fun TabDialog(l: Launcher, i: Int, tab: Tab) {
     val onClose = { l.popup = null }
@@ -1862,7 +2097,25 @@ private fun TabDialog(l: Launcher, i: Int, tab: Tab) {
             Column {
                 GatedHaptics(l) { OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), singleLine = true) }
                 if (tab.apps != null) {
-                    Row(Modifier.padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    val count = tab.apps.mapNotNull(l.find).toSet().size
+                    Row(
+                        Modifier
+                            .padding(top = 8.dp)
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                // The checklist takes this dialog's place, so the name and switch are kept first.
+                                val title = name.trim().ifEmpty { tab.name }
+                                l.update { it.copy(tabs = it.tabs.replaced(i) { t -> t.copy(name = title, hideApps = hide) }) }
+                                l.popup = tabChecklist(i, title)
+                            }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(stringResource(R.string.drawer_pick_apps), Modifier.weight(1f), fontSize = 16.sp)
+                        Text(pluralStringResource(R.plurals.count_apps, count, count), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                    }
+                    Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(stringResource(R.string.drawer_hide_from_all_tabs), Modifier.weight(1f).padding(end = 16.dp), fontSize = 16.sp)
                         Switch(hide, {
                             hide = it
@@ -1919,15 +2172,19 @@ private fun DockSettings(l: Launcher, layout: Layout) {
         val used = icons.count { it != DockIcon() }
         val summary = if (used == 0) stringResource(R.string.settings_page_empty) else pluralStringResource(R.plurals.count_icons, used, used)
         SettingRow(stringResource(R.string.settings_page, i + 1), summary) {
-            if (layout.dock.size > 1) IconAction(TRASH, stringResource(R.string.remove)) {
-                val remove = { l.update { it.copy(dock = it.dock.filterIndexed { j, _ -> j != i }) } }
-                if (used == 0) remove()
-                else l.popup = Popup.Confirm(
-                    l.getString(R.string.settings_remove_page, i + 1),
-                    l.getString(R.string.dock_remove_page_text),
-                    l.getString(R.string.remove),
-                    remove,
-                )
+            if (layout.dock.size > 1) {
+                IconAction(UP, stringResource(R.string.move_up), enabled = i > 0) { l.update { it.copy(dock = it.dock.shifted(i, i - 1)) } }
+                IconAction(DOWN, stringResource(R.string.move_down), enabled = i < layout.dock.lastIndex) { l.update { it.copy(dock = it.dock.shifted(i, i + 1)) } }
+                IconAction(TRASH, stringResource(R.string.remove)) {
+                    val remove = { l.update { it.copy(dock = it.dock.filterIndexed { j, _ -> j != i }) } }
+                    if (used == 0) remove()
+                    else l.popup = Popup.Confirm(
+                        l.getString(R.string.settings_remove_page, i + 1),
+                        l.getString(R.string.dock_remove_page_text),
+                        l.getString(R.string.remove),
+                        remove,
+                    )
+                }
             }
         }
     }

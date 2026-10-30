@@ -42,6 +42,10 @@
     <string name="open_target_assistant">the assistant</string>
     <string name="open_target_calendar">the calendar</string>
     <string name="open_target_settings">Settings</string>
+    <string name="open_target_phone">the phone app</string>
+    <string name="open_target_messages">messages</string>
+    <string name="open_target_link">the link</string>
+    <string name="open_target_email">the e-mail app</string>
 
     <!-- What an icon or gesture opens, in "Tap: none" and "Double tap: None" -->
     <string name="target_none">none</string>
@@ -54,8 +58,13 @@
     <!-- Home screen -->
     <string name="desktop_no_room_page">No room on this page</string>
     <string name="desktop_no_room_main">No room on the main page</string>
+    <string name="desktop_no_room_page_n">No room on page %1$d</string>
+    <string name="desktop_rename_icon">Rename icon</string>
+    <string name="desktop_move_to_page">Move to another page</string>
     <string name="menu_wallpaper">Wallpaper</string>
     <string name="menu_app_info">App info</string>
+    <string name="uninstall">Uninstall</string>
+    <string name="uninstall_failed">Couldn\'t uninstall %1$s</string>
     <string name="widget_add">Add widget</string>
     <string name="widget_reconfigure">Set up again</string>
     <string name="widget_no_room">No room for this widget on the page</string>
@@ -64,6 +73,8 @@
 
     <!-- Dock -->
     <string name="dock_slot_taken">That dock slot is taken</string>
+    <string name="dock_slot_paused">That dock slot is %1$s\'s, which is paused</string>
+    <string name="paused_placed">%1$s is paused: it shows once it resumes</string>
     <string name="dock_tap">Tap: %1$s</string>
     <string name="dock_swipe_up">Swipe ↑: %1$s</string>
     <string name="dock_swipe_down">Swipe ↓: %1$s</string>
@@ -75,6 +86,14 @@
     <string name="search_apps_hint">Search apps…</string>
     <string name="search_with">Search with</string>
     <string name="search_calc_result">Result</string>
+    <string name="search_us_cup">US cup: %1$s ml</string>
+    <string name="answer_phone">Phone number</string>
+    <string name="answer_link">Link</string>
+    <string name="answer_email">E-mail address</string>
+    <string name="answer_call">Call</string>
+    <string name="answer_sms">Send SMS</string>
+    <string name="answer_open">Open</string>
+    <string name="answer_write">Write</string>
     <string name="drawer_rename_tab">Rename tab</string>
     <string name="drawer_new_tab">New tab</string>
     <string name="drawer_show_app">Show in drawer</string>
@@ -144,6 +163,34 @@
         <item quantity="other">%d pages are added.</item>
     </plurals>
 
+    <string name="tidy">Tidy up</string>
+    <string name="tidy_all_clear">All in order</string>
+    <string name="tidy_all_clear_summary">Nothing broken, duplicated or empty</string>
+    <plurals name="tidy_summary">
+        <item quantity="one">%d thing to check</item>
+        <item quantity="other">%d things to check</item>
+    </plurals>
+    <string name="tidy_broken">Broken</string>
+    <string name="tidy_remove_broken">Remove everything broken</string>
+    <string name="tidy_remove_broken_summary">Duplicates and empty pages stay</string>
+    <plurals name="tidy_remove_broken_text">
+        <item quantity="one">Removes %d item whose app or widget is gone.</item>
+        <item quantity="other">Removes %d items whose app or widget is gone.</item>
+    </plurals>
+    <string name="tidy_twins">Duplicates</string>
+    <string name="tidy_empty_pages">Empty pages</string>
+    <!-- Where something is in the dock: "Dock 1 · icon 3", then "· swipe ↑" for what a swipe opens -->
+    <string name="tidy_dock">Dock %1$d · icon %2$d</string>
+    <string name="tidy_swipe">swipe %1$s</string>
+    <!-- A widget whose app is gone, named by its package -->
+    <string name="tidy_widget">Widget from %1$s</string>
+    <!-- Apps Focus mode or a Digital Wellbeing limit paused -->
+    <string name="paused_apps">Paused apps</string>
+    <string name="paused_dim">Dim</string>
+    <string name="paused_hide">Hide</string>
+    <string name="paused_dim_summary">Dim: greyed out where they are</string>
+    <string name="paused_hide_summary">Hide: off the desktop, dock and tabs, their spots kept, until they resume; search still shows them</string>
+
     <string name="drawer_grid">Drawer grid</string>
     <string name="drawer_grid_note">Rows is how many fit on one screen, which sets their height.</string>
     <string name="settings_tabs">Tabs</string>
@@ -151,6 +198,7 @@
     <string name="drawer_tab_all_apps">All apps</string>
     <string name="drawer_tab_hides_apps">hidden from All apps</string>
     <string name="drawer_add_tab">Add tab</string>
+    <string name="drawer_pick_apps">Choose apps</string>
     <string name="drawer_hide_from_all_tabs">Hide its apps from All apps</string>
     <string name="drawer_remove_tab">Remove tab</string>
     <string name="drawer_remove_tab_title">Remove “%1$s”</string>
@@ -161,6 +209,24 @@
     <string name="poison_instead">Instead of a poison</string>
     <string name="poison_instead_none">An app the pause offers you instead</string>
     <string name="poison_pick_instead">Offer instead of a poison</string>
+    <string name="settings_search">Search</string>
+    <string name="search_numbers">Number format</string>
+    <string name="search_numbers_auto">Automatic (%1$s)</string>
+    <string name="unused">Not opened in a while</string>
+    <string name="unused_ready_on">Ready on %1$s</string>
+    <string name="unused_none">None</string>
+    <plurals name="unused_note">
+        <item quantity="one">Apps you have not opened from Launcher in %d day, installed at least that long ago; system apps, poisons and apps with a widget on the desktop are left out. Launcher does not see what you open from a notification, from Recents or from a link in another app, so these are only candidates.</item>
+        <item quantity="other">Apps you have not opened from Launcher in %d days, installed at least that long ago; system apps, poisons and apps with a widget on the desktop are left out. Launcher does not see what you open from a notification, from Recents or from a link in another app, so these are only candidates.</item>
+    </plurals>
+    <string name="unused_waiting">Not yet</string>
+    <string name="unused_waiting_text">Launcher has counted opens since %1$s. The list will be ready on %2$s.</string>
+    <plurals name="unused_none_summary">
+        <item quantity="one">Every app was opened or installed in the last %d day</item>
+        <item quantity="other">Every app was opened or installed in the last %d days</item>
+    </plurals>
+    <string name="unused_last_open">Last opened on %1$s</string>
+    <string name="unused_no_opens">No opens counted</string>
 
     <string name="dock_icons_per_page">Icons per page</string>
     <string name="dock_icons_per_page_summary">Extra ones are kept until there is room again</string>
@@ -183,7 +249,7 @@
     <string name="backup_chosen_folder">the chosen folder</string>
     <string name="backup_import_nova">Import from Nova</string>
     <string name="backup_import_nova_summary">From a .novabackup file</string>
-    <string name="backup_import_nova_text">Replaces the home screen, dock, tabs, hidden apps and grids; poisons and the app the pause offers stay. Widgets are set up again by tapping them.</string>
+    <string name="backup_import_nova_text">Replaces the home screen, dock, tabs, hidden apps and grids; poisons, the app the pause offers, vibration, the number format and how paused apps show stay. Widgets are set up again by tapping them.</string>
     <string name="backup_saved">Backup saved</string>
     <string name="backup_save_failed">Couldn\'t save the backup</string>
     <string name="backup_restored">Backup restored</string>

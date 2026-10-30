@@ -18,6 +18,8 @@ import android.content.pm.ShortcutInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.icu.text.DecimalFormatSymbols
+import android.icu.util.ULocale
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -25,6 +27,7 @@ import android.os.Process
 import android.os.UserHandle
 import android.os.UserManager
 import android.provider.DocumentsContract
+import android.telephony.TelephonyManager
 import android.text.format.DateFormat
 import android.util.Log
 import android.view.ViewGroup
@@ -66,8 +69,14 @@ private const val HOST_ID = 1024
 private const val REQUEST_CONFIGURE = 1
 private const val FOLDER_ACCESS = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
 private const val MAX_BACKUP_BYTES = 1 shl 20 // a layout is a few KB; anything bigger is the wrong file
+private const val TRACKED_KEY = "tracked" // in prefs "usage": the day opens began to be counted
+const val DAY_MS = 86_400_000.0
 
-class App(val id: AppId, val label: String, val icon: ImageBitmap, val info: LauncherActivityInfo, val suspended: Boolean)
+/** [installed]: the day it was first installed (days since 1970), or null when unknown, as for a work profile's app. */
+class App(val id: AppId, val label: String, val icon: ImageBitmap, val info: LauncherActivityInfo, val suspended: Boolean, val installed: Double?) {
+    /** Can be uninstalled: not a system app, updated or not. */
+    val removable get() = info.applicationInfo.flags and (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0
+}
 
 /** One of an app's own shortcuts, as its menu lists it; [icon] is null when the app gives it none. */
 class AppShortcut(val info: ShortcutInfo, val icon: ImageBitmap?) {
@@ -156,6 +165,7 @@ class Launcher : ComponentActivity() {
 
     // Only touched from [loader], which runs one task at a time.
     private val icons = HashMap<AppId, ImageBitmap>()
+    private val installTimes = HashMap<String, Long>() // by package, main profile only; 0 when not found
     private val loader = Dispatchers.Default.limitedParallelism(1)
     private val widgetViews = HashMap<Int, AppWidgetHostView>()
 
@@ -174,10 +184,19 @@ class Launcher : ComponentActivity() {
     var today by mutableStateOf("")
         private set
     var cellSize = DpSize(90.dp, 150.dp) // measured by the desktop; sizes new widgets
+    /** ISO code of the phone's country, upper case: its SIM's, else its network's, else the locale's; read on each return home. */
+    var country = ""
+        private set
 
     private val packageCallback = object : LauncherApps.Callback() {
         override fun onPackageAdded(packageName: String, user: UserHandle) = reload(packageName)
-        override fun onPackageRemoved(packageName: String, user: UserHandle) = reload(packageName)
+        override fun onPackageRemoved(packageName: String, user: UserHandle) {
+            if (uninstalling == packageName to user) {
+                uninstalling = null
+                update { it.withoutApp(packageName, users.getSerialNumberForUser(user), userSerial) }
+            }
+            reload(packageName)
+        }
         override fun onPackageChanged(packageName: String, user: UserHandle) = reload(packageName)
         override fun onPackagesAvailable(packageNames: Array<String>, user: UserHandle, replacing: Boolean) = reload(*packageNames)
         override fun onPackagesUnavailable(packageNames: Array<String>, user: UserHandle, replacing: Boolean) = reload(*packageNames)
@@ -212,6 +231,9 @@ class Launcher : ComponentActivity() {
             val (score, since) = value.toString().split(' ').mapNotNull(String::toDoubleOrNull).takeIf { it.size == 2 } ?: return@mapNotNull null
             key to (score to since)
         }.toMap()
+        // Written once. The store predates this key, so counting may have begun before today: see countedSince.
+        tracked = useScores.getString(TRACKED_KEY, null)?.toDoubleOrNull()
+            ?: countedSince(uses.values.map { it.second }, now()).also { useScores.edit { putString(TRACKED_KEY, "$it") } }
         backupFolder = backups.getString("folder", null)?.toUri()
         setContent { LauncherScreen(this) }
     }
@@ -220,6 +242,9 @@ class Launcher : ComponentActivity() {
         super.onStart()
         host.startListening()
         autoBackup()
+        val phone = getSystemService(TelephonyManager::class.java) // neither country needs a permission
+        country = listOfNotNull(phone?.simCountryIso, phone?.networkCountryIso, Locale.getDefault().country)
+            .firstOrNull { it.isNotEmpty() }.orEmpty().uppercase(Locale.ROOT)
     }
 
     override fun onResume() {
@@ -259,6 +284,12 @@ class Launcher : ComponentActivity() {
         drawerResets++
     }
 
+    /** The decimal mark of the phone's [country] ("und_AR" is es_AR: ','). */
+    val countryDecimal: Char get() = DecimalFormatSymbols.getInstance(ULocale.addLikelySubtags(ULocale("und_$country"))).decimalSeparator
+
+    /** The decimal mark search reads and shows numbers with: the one picked in Ajustes, else the country's. */
+    val decimal get() = layout.decimal ?: countryDecimal
+
     fun openSearch() {
         focusSearch = true
         drawerOpen = true
@@ -287,13 +318,16 @@ class Launcher : ComponentActivity() {
 
     private fun loadApps(changed: Set<String>): List<App> {
         icons.keys.removeAll { it.substringBefore('/') in changed }
+        installTimes.keys.removeAll { it in changed }
         val size = (56 * resources.displayMetrics.density).toInt()
         return launcherApps.profiles
             .flatMap { launcherApps.getActivityList(null, it) }
             .map { info ->
                 val id = "${info.componentName.flattenToString()}#${users.getSerialNumberForUser(info.user)}"
                 val icon = icons.getOrPut(id) { info.getBadgedIcon(0).toBitmap(size, size).asImageBitmap() }
-                App(id, info.label.toString(), icon, info, info.applicationInfo.flags and ApplicationInfo.FLAG_SUSPENDED != 0)
+                // A binder call, read as this user: a work profile's copy would get the main profile's date, or none.
+                val installed = if (info.user != Process.myUserHandle()) 0 else installTimes.getOrPut(info.componentName.packageName) { info.firstInstallTime }
+                App(id, info.label.toString(), icon, info, info.applicationInfo.flags and ApplicationInfo.FLAG_SUSPENDED != 0, installed.takeIf { it > 0 }?.div(DAY_MS))
             }
             .sortedBy { fold(it.label) }
     }
@@ -343,33 +377,74 @@ class Launcher : ComponentActivity() {
     /** Opens a poison app (or one of its shortcuts) only through the pause screen; [open] says whether it started. */
     private fun pauseIfPoison(app: App?, open: () -> Boolean) {
         if (app != null && isPoison(app)) {
-            popup = Popup.Pause(app) { open() }
+            popup = Popup.Pause(app) { if (open()) countUse(app) } // only its day: a poison gains no rank
             return
         }
-        if (open()) app?.let(::countUse) // the only place uses are counted, so a poison or a failed open never is
+        if (open()) app?.let(::countUse) // only once it started, so a failed open never counts
     }
 
     // How much each app is used, as "<package>#<user>" to "<score> <day>" (see [decayed]), so search can put it first
-    // among equally good matches. Not in the layout, so backups leave it out; faded entries are dropped on the next write.
+    // among equally good matches. Not in the layout, so backups leave it out; faded entries are dropped on a write (see [kept]).
     private val useScores by lazy { getSharedPreferences("usage", MODE_PRIVATE) }
     // Not snapshot state: results shown must not reorder under the app opening from them. The next query reads it.
     private var uses = emptyMap<String, Pair<Double, Double>>()
+    /** The day opens began to be counted (see [unused]). */
+    var tracked = 0.0
+        private set
 
-    private fun now() = System.currentTimeMillis() / 86_400_000.0 // days since 1970
+    private fun now() = System.currentTimeMillis() / DAY_MS // days since 1970
 
     /** The search rank of [app]: its decayed opens, none for a poison (it may have been used before it became one). */
     fun usage(app: App): Double =
-        if (isPoison(app)) 0.0 else uses[packageKey(app.id)]?.let { (score, since) -> decayed(score, since, now()) } ?: 0.0
+        if (isPoison(app)) 0.0 else uses[packageKey(app.id)]?.let { (score, since) -> useRank(score, since, now()) } ?: 0.0
 
+    /** The day [app] was last opened through the launcher, or null when none is kept: never, or [UNUSED_DAYS] ago at least. */
+    fun lastOpen(app: App) = uses[packageKey(app.id)]?.second
+
+    /** Records an open of [app] that started: one more use, or for a poison only the day, for [lastOpen]. */
     private fun countUse(app: App) {
         val now = now()
-        val next = (uses + (packageKey(app.id) to (usage(app) + 1 to now))).filterValues { (score, since) -> decayed(score, since, now) >= 0.01 }
+        val key = packageKey(app.id)
+        val score = uses[key]?.let { (score, since) -> decayed(score, since, now) } ?: 0.0
+        val next = (uses + (key to ((if (isPoison(app)) score else score + 1) to now))).filterValues { (score, since) -> kept(score, since, now) }
         uses = next
         useScores.edit {
             clear()
+            putString(TRACKED_KEY, "$tracked")
             next.forEach { (key, use) -> putString(key, "${use.first} ${use.second}") }
         }
     }
+
+    /**
+     * Ajustes → Sin abrir hace tiempo ([unused]): removable apps, one per package, poisons (kept on purpose) and the
+     * apps of the desktop's widgets left out. Null until opens have been counted for [UNUSED_DAYS].
+     */
+    fun unusedApps(): List<App>? {
+        val widgeted = layout.widgetPackages
+        val candidates = apps.distinctBy { packageKey(it.id) }.filter { it.removable && !isPoison(it) && it.info.componentName.packageName !in widgeted }
+        return unused(candidates, tracked, now(), ::lastOpen, App::installed)
+    }
+
+    // The app [uninstall] last asked Android to remove: once it is gone, its icons go too, as in Nova.
+    private var uninstalling: Pair<String, UserHandle>? = null
+
+    /** Android's own uninstall confirmation for [app]. Not an open: no pause, and never counted as a use. */
+    fun uninstall(app: App) {
+        val pkg = app.info.componentName.packageName
+        try {
+            startActivity(Intent(Intent.ACTION_DELETE, Uri.fromParts("package", pkg, null)).putExtra(Intent.EXTRA_USER, app.info.user))
+            uninstalling = pkg to app.info.user
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "Cannot uninstall $pkg", e)
+            toast(getString(R.string.uninstall_failed, app.label))
+        }
+    }
+
+    /** Whether the desktop and dock leave [target] out: its app is paused and Ajustes hides paused apps. */
+    fun hides(target: Target?) = layout.hideSuspended && appOf(target)?.suspended == true
+
+    /** The apps the drawer tabs list from: without the paused ones when Ajustes hides them (search still shows them). */
+    val tabbed get() = if (layout.hideSuspended) apps.filterNot { it.suspended } else apps
 
     // Opens of each poison app today, as "<date>|<package>#<user>" counts; older days are dropped on the next write.
     private val opens by lazy { getSharedPreferences("opens", MODE_PRIVATE) }
@@ -482,6 +557,48 @@ class Launcher : ComponentActivity() {
     fun unbind(page: Int, item: Item.Widget) {
         release(item)
         updatePage(page) { items -> items.map { if (it == item) item.copy(widgetId = 0) else it } }
+    }
+
+    /** Removes what sits at [place]: a desktop item as [remove] does, or a dock tap or swipe, set to none. */
+    fun remove(place: Place) = when (place) {
+        is Place.Desktop -> remove(place.page, place.item)
+        is Place.Dock -> updateDock(place.page, place.slot) {
+            when (place.swipe) {
+                null -> it.copy(tap = null)
+                Swipe.UP -> it.copy(up = null)
+                else -> it.copy(down = null)
+            }
+        }
+    }
+
+    /**
+     * What Ajustes → Ordenar lists ([Layout.audit]). A widget is gone when its provider is not installed and it is not
+     * bound to a live one (a work profile's bound widget is not among [widgetProviders]). Blocking: the provider list
+     * and each missing app's lookup are binder calls, so call it off the main thread.
+     */
+    fun audit(layout: Layout): Audit {
+        val providers = widgetManager.installedProviders.mapTo(HashSet()) { it.provider.flattenToString() }
+        return layout.audit(::installed) { it.provider in providers || (it.widgetId != 0 && widgetManager.getAppWidgetInfo(it.widgetId) != null) }
+    }
+
+    /**
+     * Whether [target]'s app is still there: in the app list (which keeps a paused work profile's apps, as LauncherApps
+     * lists them for launchers to grey out), else installed for its user, which covers a reload that ran mid-update.
+     */
+    private fun installed(target: Target): Boolean {
+        if (appOf(target) != null) return true
+        val (pkg, user) = when (target) {
+            is Target.App -> target.id.substringBefore('/') to target.id.substringAfterLast('#').toLongOrNull()?.let(users::getUserForSerialNumber)
+            is Target.Shortcut -> target.pkg to Process.myUserHandle()
+        }
+        return user != null && try {
+            launcherApps.getApplicationInfo(pkg, 0, user)
+            true
+        } catch (e: PackageManager.NameNotFoundException) {
+            false
+        } catch (e: SecurityException) { // a user outside this profile group: a backup from another phone
+            false
+        }
     }
 
     private fun release(item: Item.Widget) {
@@ -735,7 +852,7 @@ class Launcher : ComponentActivity() {
 
     fun restoreBackup() = openBackup.launch(arrayOf("application/json", "application/octet-stream", "text/plain"))
 
-    // --- Nova import: a .novabackup replaces the layout; the venenos (which Nova lacks), the app offered instead and the vibration setting stay ---
+    // --- Nova import: a .novabackup replaces the layout; the venenos (which Nova lacks), the app offered instead, the vibration setting, the number format and how paused apps show stay ---
 
     private val pickNova = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@registerForActivityResult
@@ -746,7 +863,7 @@ class Launcher : ComponentActivity() {
                 Log.w(TAG, "Nova import failed", e)
                 return@launch toast(getString(R.string.backup_nova_read_failed))
             }
-            replaceLayout(imported.restored(emptyMap()).copy(poisons = layout.poisons, haptics = layout.haptics, instead = layout.instead))
+            replaceLayout(imported.restored(emptyMap()).copy(poisons = layout.poisons, haptics = layout.haptics, instead = layout.instead, decimal = layout.decimal, hideSuspended = layout.hideSuspended))
             toast(getString(R.string.backup_nova_imported))
         }
     }

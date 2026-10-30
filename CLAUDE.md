@@ -22,20 +22,30 @@ picker with `EXTRA_LOCAL_ONLY`, so a cloud provider cannot be chosen: keep that 
 Release builds are signed with this machine's debug key (`~/.android/debug.keystore`). Losing it means
 uninstalling to update, which wipes the saved layout.
 
-Other permissions: `EXPAND_STATUS_BAR` (swipe down opens notifications) and `QUERY_ALL_PACKAGES` (the widget
-picker must see non-exported widget receivers, which a `<queries>` block misses).
+Other permissions: `EXPAND_STATUS_BAR` (swipe down opens notifications), `QUERY_ALL_PACKAGES` (the widget
+picker must see non-exported widget receivers, which a `<queries>` block misses) and `REQUEST_DELETE_PACKAGES`
+(Desinstalar: `ACTION_DELETE`, Android's own confirmation; a normal permission, granted at install).
 
 ## Layout
 
 - `Model.kt`: pure logic. `Layout` holds dock pages (`DockIcon`s: tap/up/down targets), desktop pages of `Item`s
   (icons and widgets on half cells), drawer tabs, hidden apps, the double-tap target and the settings: desktop and
-  drawer grids, dock icons per page, dock wrap-around, haptics, the app the poison pause offers `instead`. Every dock
-  page keeps at least `dockSize` icons; those past it stay saved, hidden. Shrinking the grid (`withGrid`) or removing
-  a page (`withoutPage`) moves what no longer fits to the nearest free spot, else another page, else a new one:
-  nothing is dropped. Also JSON persistence,
+  drawer grids, dock icons per page, dock wrap-around, haptics, the app the poison pause offers `instead`, the number
+  format (`decimal`; null follows the phone's country), `hideSuspended` (Apps pausadas: Atenuar / Ocultar). Every dock page keeps at least `dockSize` icons; those past
+  it stay saved, hidden. Shrinking the grid (`withGrid`) or removing a page (`withoutPage`) moves what no longer fits
+  to the nearest free spot, else another page, else a new one: nothing is dropped. `withPageMoved` reorders desktop
+  pages and keeps `defaultPage` on the main one (`shifted` reorders any list: dock pages, tabs); the item menu's
+  "Mover a otra página" is `moved` with the item's own cell. `audit` is Ajustes → Ordenar: broken icons, dock targets
+  and widgets (by the `alive` checks it is given), the same app by `packageKey` across pages or dock and page, and
+  empty pages, each a `Place`; it removes nothing (its `size` leaves twins out: they may be on purpose). `withoutApp`
+  drops an uninstalled package's desktop icons and dock targets. Also JSON persistence,
   `finder` (app lookup tolerant of launcher-alias changes), `tabApps`, `freeCell`, accent-insensitive search (an
-  optional `rank` orders matches within the same quality), the `decayed` use score and `menuShortcuts` (Launcher3's
-  pick of the shortcuts an app's menu lists).
+  optional `rank` orders matches within the same quality), the `decayed` use score (`useRank`: none below `MIN_USE`;
+  `kept`; `countedSince`), `unused` (Sin abrir hace tiempo: null until opens have been counted `UNUSED_DAYS`),
+  `widgetPackages`, `menuShortcuts` (Launcher3's
+  pick of the shortcuts an app's menu lists) and search's `answer`: `calc`, unit conversions, phone numbers
+  (`whatsAppNumber` adds Argentina's mobile 9), links and e-mail addresses, numbers read and shown by `formatNumber`
+  with the chosen decimal mark.
   Unit-tested in `src/test`.
 - `Nova.kt`: pure converter from Nova's `favorites`/`drawer_groups`/`appgroups` rows and prefs (grids included) to a
   `Layout`. `appgroups` group -1 is Nova's hidden apps. `NovaImport.kt` reads the `.novabackup` zip (nova.db + nova.xml).
@@ -52,21 +62,38 @@ picker must see non-exported widget receivers, which a `<queries>` block misses)
   full-screen overlay styled after Nova's settings (`novaColors()` greys the whole app's Material scheme; glyphs are
   Canvas line drawings, no icon library); it survives leaving (so the file pickers it opens come back to it) and
   closes on home. Home stays composed under it at alpha 0, so the clear preview strips show the wallpaper:
-  removing Home would re-parent the cached widget views.
+  removing Home would re-parent the cached widget views. Ordenar is `Section.TIDY`, a sub-screen of Escritorio (back
+  returns there; it is left off the main list). Its list comes from `Launcher.audit`, worked out off the main thread
+  (`rememberAudit`: binder calls) on open and after each change; an app counts as gone only when the app list lacks it and `getApplicationInfo` fails for its user, so a
+  paused work profile's apps (LauncherApps still lists them) and an app mid-update are never offered. Its Quitar goes
+  through `remove(place)`: `remove(page, item)` (widgets free their ids) or `updateDock` (the target set to none).
+  Sin abrir hace tiempo is `Section.UNUSED`, the same kind of sub-screen of Cajón de apps, from `Launcher.unusedApps`
+  (removable apps, one per package, no poisons, none with a widget on the desktop; the install day is `App.installed`,
+  read in `loadApps` off the main thread and only for the main profile, as `firstInstallTime` reads as this user).
+  With `hideSuspended`, `Launcher.hides` keeps a paused app's desktop icons and dock taps from being drawn (the item
+  stays saved, so its spot stays taken, though a long press there opens the desktop menu) and `Launcher.tabbed` leaves
+  it out of the tabs; search lists `apps`, and one dragged from there is placed with a toast saying it is paused.
 - The layout is stored as JSON in SharedPreferences `launcher`, key `layout`. An unreadable layout is kept under
   `layout.corrupt` instead of being overwritten. Prefs `opens` counts today's opens of poison apps; prefs `usage`
-  holds each app's decayed use score (`<package>#<user>` to `<score> <day>`), kept out of the layout so backups skip
-  it; prefs `backup` holds the weekly backup folder (a persisted SAF tree URI) and when it last ran.
+  holds each app's decayed use score (`<package>#<user>` to `<score> <day>`, the day of its last open), kept out of
+  the layout so backups skip it; a faded entry is dropped only once `UNUSED_DAYS` old (`kept`), so a missing one means
+  no open in that long, and key `tracked` is the day counting began (written once, by `countedSince`); prefs `backup` holds the weekly backup folder (a persisted SAF tree URI) and when it last ran.
 
 Features worth knowing before editing: "venenos" (`Layout.poisons`) open only after a pause that grows with each
 open today; every way the launcher opens an app (`start`, `open`, `startIntent`) goes through `pauseIfPoison`, so
 a new one must too. The pause can offer `Layout.instead` (opened with `open`, so a poison there pauses as well;
 `Popup.Pause` is keyed so that pause starts its own countdown). Known gaps: notifications, recents, and an app
-picked inside a system chooser. The non-poison branch of `pauseIfPoison` is the one place an open is counted for
-search (`countUse`, only once `open` returns true: it started), so poisons and failed opens are never counted, and
-`usage` ranks a poison 0 anyway. `uses` is not snapshot state, so results do not reorder under the app opening. Only the drawer search
-ranks by use; the tabs and the app pickers stay alphabetical. Search shows a calculator result (`calc`) when the query
-is a sum.
+picked inside a system chooser. `pauseIfPoison` is the one place an open is counted (`countUse`, only once `open`
+returns true: it started), so a failed open never is; a poison's open keeps only its day (for Sin abrir hace tiempo),
+never a score, and `usage` ranks a poison 0 anyway. Desinstalar (`Launcher.uninstall`, in the drawer, desktop and dock
+app menus and Sin abrir hace tiempo; hidden for system apps by `App.removable`) is not an open: it skips
+`pauseIfPoison` and is never counted. Once that package is removed (`onPackageRemoved`), `withoutApp` drops its icons
+and dock targets; any other removal leaves them to Ordenar. `uses` is not snapshot state, so results do not reorder under the app opening. Only the drawer search
+ranks by use; the tabs and the app pickers stay alphabetical. Search answers more than apps in one header,
+`SearchAnswer`: a sum or a conversion (a tap copies it), or bubbles for a phone number (Call is `ACTION_DIAL`), link (only
+when no app matches: "booking.com") or e-mail address, each opened through `startIntent`; nothing typed is kept. A phone-like query never also shows a sum, so
+`answer` tries it first. `Launcher.decimal` is `Layout.decimal`, else the decimal mark of `Launcher.country` (SIM,
+then network, then locale region; no permission needed).
 
 Icons get their pressed feel from `PressScale`, passed as their clickable's `indication` (so long press, drag and
 scrolling cancel it through the clickable); a new icon should take it too. Opens pass no `ActivityOptions`: an open
