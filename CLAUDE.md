@@ -1,13 +1,13 @@
-# Launcher
+# Islauncher
 
-Personal Android home-screen app that replaces Nova Launcher. Kotlin + Jetpack Compose, single Gradle module at the repo root.
+Private Android home-screen app that replaces Nova Launcher. Kotlin + Jetpack Compose, single Gradle module at the repo root.
 
 ## Invariant: no network
 
 A launcher sees every app the owner opens, so it must never be able to send data anywhere.
 `src/main/AndroidManifest.xml` strips `android.permission.INTERNET` with `tools:node="remove"`, which also
 blocks libraries from adding it. Never remove that line or add a feature that needs the network. After adding
-a dependency, confirm with `apkanalyzer manifest permissions build/outputs/apk/release/launcher-release.apk`.
+a dependency, confirm with `apkanalyzer manifest permissions build/outputs/apk/release/islauncher-release.apk`.
 Cloud backup is off too (`allowBackup="false"`). The layout backups (manual and weekly) go through the system file
 picker with `EXTRA_LOCAL_ONLY`, so a cloud provider cannot be chosen: keep that extra on any new picker that writes.
 
@@ -17,10 +17,15 @@ picker with `EXTRA_LOCAL_ONLY`, so a cloud provider cannot be chosen: keep that 
   the running home app can make Android drop the "always" home choice (the HOME role stays, the choice doesn't, so
   Home asks which launcher to use). The script stops the app first and warns if the choice was lost anyway.
 - Unit tests: `./gradlew testDebugUnitTest`
+- Build a GitHub release APK: `scripts/release.sh` (tests, signature and no-INTERNET checks, SHA-256 for the notes).
 - Make it the default: Ajustes → Apps → Apps predeterminadas → App de inicio.
 
-Release builds are signed with this machine's debug key (`~/.android/debug.keystore`). Losing it means
-uninstalling to update, which wipes the saved layout.
+Release builds are signed with the key in `~/.config/islauncher/` (`release.p12`, `password`), which never enters the
+repo; losing it means users must uninstall to update, which wipes their layout. Without it they fall back to this
+machine's debug key, so anyone can build from source, and `scripts/release.sh` refuses to ship that build.
+
+A restored backup or Nova import goes through `restored`: past `MAX_ITEMS`, `MAX_TABS` or `MAX_TEXT` the whole file is
+rejected before anything is saved, because a saved layout that cannot render would fail on every start.
 
 Other permissions: `EXPAND_STATUS_BAR` (swipe down opens notifications), `QUERY_ALL_PACKAGES` (the widget
 picker must see non-exported widget receivers, which a `<queries>` block misses) and `REQUEST_DELETE_PACKAGES`

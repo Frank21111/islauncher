@@ -19,7 +19,7 @@ default=false
 if home_is_ours; then default=true; fi
 if $front; then adb shell am start -W -a android.settings.SETTINGS > /dev/null; fi
 adb shell am force-stop $pkg
-adb install -r build/outputs/apk/release/launcher-release.apk
+adb install -r build/outputs/apk/release/islauncher-release.apk
 if home_is_ours; then
   if $front; then adb shell input keyevent HOME; fi
 elif $default; then

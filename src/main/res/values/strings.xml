@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name" translatable="false">Launcher</string>
+    <string name="app_name" translatable="false">Islauncher</string>
 
     <!-- Shared -->
     <string name="cancel">Cancel</string>
@@ -51,7 +51,7 @@
     <string name="target_none">none</string>
     <string name="target_not_installed">not installed</string>
     <string name="app_unavailable">The app is not installed or is disabled</string>
-    <string name="shortcut_needs_home">Shortcuts work when Launcher is the home app</string>
+    <string name="shortcut_needs_home">Shortcuts work when Islauncher is the home app</string>
     <string name="shortcut_add_to_home">Add “%1$s” to home screen</string>
     <string name="shortcut_open_failed">Couldn\'t open “%1$s”. Add it again from its app</string>
 
@@ -227,11 +227,11 @@
     <string name="unused_ready_on">Ready on %1$s</string>
     <string name="unused_none">None</string>
     <plurals name="unused_note">
-        <item quantity="one">Apps you have not opened from Launcher in %d day, installed at least that long ago; system apps, poisons and apps with a widget on the desktop are left out. Launcher does not see what you open from a notification, from Recents or from a link in another app, so these are only candidates.</item>
-        <item quantity="other">Apps you have not opened from Launcher in %d days, installed at least that long ago; system apps, poisons and apps with a widget on the desktop are left out. Launcher does not see what you open from a notification, from Recents or from a link in another app, so these are only candidates.</item>
+        <item quantity="one">Apps you have not opened from Islauncher in %d day, installed at least that long ago; system apps, poisons and apps with a widget on the desktop are left out. Islauncher does not see what you open from a notification, from Recents or from a link in another app, so these are only candidates.</item>
+        <item quantity="other">Apps you have not opened from Islauncher in %d days, installed at least that long ago; system apps, poisons and apps with a widget on the desktop are left out. Islauncher does not see what you open from a notification, from Recents or from a link in another app, so these are only candidates.</item>
     </plurals>
     <string name="unused_waiting">Not yet</string>
-    <string name="unused_waiting_text">Launcher has counted opens since %1$s. The list will be ready on %2$s.</string>
+    <string name="unused_waiting_text">Islauncher has counted opens since %1$s. The list will be ready on %2$s.</string>
     <plurals name="unused_none_summary">
         <item quantity="one">Every app was opened or installed in the last %d day</item>
         <item quantity="other">Every app was opened or installed in the last %d days</item>
@@ -278,7 +278,7 @@
     <!-- Settings → Guide: what the app does, part by part. Each entry is a name and one line on how to do it. -->
     <string name="guide">Guide</string>
     <string name="guide_summary">Everything you can do, part by part</string>
-    <string name="guide_welcome">This is what Launcher can do, part by part. To read it again: long-press an empty spot on the home screen → Settings → Guide.</string>
+    <string name="guide_welcome">This is what Islauncher can do, part by part. To read it again: long-press an empty spot on the home screen → Settings → Guide.</string>
     <string name="guide_widgets">Widgets</string>
     <string name="guide_gestures">Gestures and haptics</string>
     <string name="guide_settings">Settings and backups</string>
@@ -299,7 +299,7 @@
     <string name="guide_tidy_how">Lists what is broken, duplicated or empty, each with its own Remove; nothing goes by itself</string>
     <string name="guide_paused_how">Apps paused by Focus mode or Digital Wellbeing are greyed out; Settings → Home screen can hide them instead</string>
     <string name="guide_pin">Shortcuts from other apps</string>
-    <string name="guide_pin_how">When an app, such as a browser, adds a shortcut to the home screen, Launcher asks you first</string>
+    <string name="guide_pin_how">When an app, such as a browser, adds a shortcut to the home screen, Islauncher asks you first</string>
     <string name="guide_widget_add_how">Long-press an empty spot → Add widget; search by app or name, with each one\'s preview and size</string>
     <string name="guide_resize_how">Long-press a widget → Resize, then drag the dots on its sides; tap outside when done</string>
     <string name="guide_reconfigure_how">Long-press a widget → Set up again, then tap it: its setup screen opens again, unless it has none or its setup is optional</string>
@@ -323,8 +323,8 @@
     <string name="guide_scroller">Scroll fast</string>
     <string name="guide_scroller_how">Drag the bar on the right edge of the list</string>
     <plurals name="guide_unused_how">
-        <item quantity="one">The apps you have not opened from Launcher in %1$d day, each with Uninstall; the list is ready once Launcher has counted opens that long</item>
-        <item quantity="other">The apps you have not opened from Launcher in %1$d days, each with Uninstall; the list is ready once Launcher has counted opens that long</item>
+        <item quantity="one">The apps you have not opened from Islauncher in %1$d day, each with Uninstall; the list is ready once Islauncher has counted opens that long</item>
+        <item quantity="other">The apps you have not opened from Islauncher in %1$d days, each with Uninstall; the list is ready once Islauncher has counted opens that long</item>
     </plurals>
     <string name="guide_search_open">Open search</string>
     <string name="guide_search_open_how">Tap the bar at the bottom, or press Home on the main page; the keyboard\'s Go opens the first result</string>
@@ -348,7 +348,7 @@
     </plurals>
     <string name="guide_instead_how">Pick a healthy app in Settings → App drawer: the pause offers it, with no wait</string>
     <string name="guide_poison_where">Where it pauses</string>
-    <string name="guide_poison_where_how">Every open through Launcher: icons, dock, gestures, shortcuts and search; not notifications or Recents</string>
+    <string name="guide_poison_where_how">Every open through Islauncher: icons, dock, gestures, shortcuts and search; not notifications or Recents</string>
     <string name="guide_swipe_up">Swipe up</string>
     <string name="guide_swipe_up_how">Anywhere on the home screen, except on a dock icon with a swipe of its own, it opens the app drawer</string>
     <string name="guide_swipe_down">Swipe down</string>
@@ -359,11 +359,11 @@
     <string name="guide_haptics_how">A light vibration on long presses, drops, throws and swipes; you can turn it off in Settings → Gestures</string>
     <string name="guide_open_settings">Open Settings</string>
     <string name="guide_open_settings_how">Long-press an empty spot on the home screen → Settings</string>
-    <string name="guide_home_app_how">Settings → Home app: pick Launcher, so the Home button opens it; only then do an app\'s shortcuts and shortcuts from other apps work</string>
+    <string name="guide_home_app_how">Settings → Home app: pick Islauncher, so the Home button opens it; only then do an app\'s shortcuts and shortcuts from other apps work</string>
     <string name="guide_backup">Manual backup</string>
     <string name="guide_backup_how">Save the home screen, dock, tabs and settings to a file and restore them later; after a reinstall, add home screen shortcuts again from their app</string>
     <string name="guide_weekly_how">A new copy each week in a folder you choose; the old ones stay</string>
     <string name="guide_nova_how">Brings the home screen, dock, tabs, hidden apps and grids from a .novabackup file</string>
     <string name="guide_offline">No internet</string>
-    <string name="guide_offline_how">Launcher has no network permission, so it cannot send anything; backups are saved on the phone</string>
+    <string name="guide_offline_how">Islauncher has no network permission, so it cannot send anything; backups are saved on the phone</string>
 </resources>

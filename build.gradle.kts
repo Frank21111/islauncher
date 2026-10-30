@@ -3,6 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose") version "2.4.21"
 }
 
+val releaseKey = file(System.getProperty("user.home")).resolve(".config/islauncher/release.p12")
+
 android {
     namespace = "io.github.gastoncampana.launcher"
     compileSdk = 37
@@ -12,15 +14,24 @@ android {
         minSdk = 33
         targetSdk = 37
         versionCode = 1
-        versionName = "1.0"
+        versionName = "0.1.0"
+    }
+
+    signingConfigs {
+        if (releaseKey.exists()) create("release") {
+            storeFile = releaseKey
+            storePassword = releaseKey.resolveSibling("password").readText()
+            keyAlias = "islauncher"
+            keyPassword = storePassword
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
-            // Personal sideloaded app: signed with this machine's own (randomly generated) debug key.
-            signingConfig = signingConfigs.getByName("debug")
+            // Without the published builds' key, this machine's debug key: scripts/release.sh refuses to ship that.
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 

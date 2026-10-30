@@ -53,7 +53,7 @@
     <string name="target_none">nada</string>
     <string name="target_not_installed">no instalada</string>
     <string name="app_unavailable">La app no está instalada o está desactivada</string>
-    <string name="shortcut_needs_home">Los atajos funcionan cuando Launcher es la app de inicio</string>
+    <string name="shortcut_needs_home">Los atajos funcionan cuando Islauncher es la app de inicio</string>
     <string name="shortcut_add_to_home">Agregar «%1$s» al escritorio</string>
     <string name="shortcut_open_failed">No se pudo abrir «%1$s». Volvé a agregarlo desde su app</string>
 
@@ -236,12 +236,12 @@
     <string name="unused_ready_on">Lista el %1$s</string>
     <string name="unused_none">Ninguna</string>
     <plurals name="unused_note">
-        <item quantity="one">Apps que no abriste desde Launcher en %d día y que instalaste hace al menos ese tiempo, sin las del sistema, los venenos ni las que tienen un widget en el escritorio. Launcher no ve lo que abrís desde una notificación, desde Recientes o desde un enlace en otra app, así que son solo candidatas.</item>
-        <item quantity="many">Apps que no abriste desde Launcher en %d días y que instalaste hace al menos ese tiempo, sin las del sistema, los venenos ni las que tienen un widget en el escritorio. Launcher no ve lo que abrís desde una notificación, desde Recientes o desde un enlace en otra app, así que son solo candidatas.</item>
-        <item quantity="other">Apps que no abriste desde Launcher en %d días y que instalaste hace al menos ese tiempo, sin las del sistema, los venenos ni las que tienen un widget en el escritorio. Launcher no ve lo que abrís desde una notificación, desde Recientes o desde un enlace en otra app, así que son solo candidatas.</item>
+        <item quantity="one">Apps que no abriste desde Islauncher en %d día y que instalaste hace al menos ese tiempo, sin las del sistema, los venenos ni las que tienen un widget en el escritorio. Islauncher no ve lo que abrís desde una notificación, desde Recientes o desde un enlace en otra app, así que son solo candidatas.</item>
+        <item quantity="many">Apps que no abriste desde Islauncher en %d días y que instalaste hace al menos ese tiempo, sin las del sistema, los venenos ni las que tienen un widget en el escritorio. Islauncher no ve lo que abrís desde una notificación, desde Recientes o desde un enlace en otra app, así que son solo candidatas.</item>
+        <item quantity="other">Apps que no abriste desde Islauncher en %d días y que instalaste hace al menos ese tiempo, sin las del sistema, los venenos ni las que tienen un widget en el escritorio. Islauncher no ve lo que abrís desde una notificación, desde Recientes o desde un enlace en otra app, así que son solo candidatas.</item>
     </plurals>
     <string name="unused_waiting">Todavía no</string>
-    <string name="unused_waiting_text">Launcher cuenta las aperturas desde el %1$s. La lista va a estar lista el %2$s.</string>
+    <string name="unused_waiting_text">Islauncher cuenta las aperturas desde el %1$s. La lista va a estar lista el %2$s.</string>
     <plurals name="unused_none_summary">
         <item quantity="one">Todas se abrieron o se instalaron en el último %d día</item>
         <item quantity="many">Todas se abrieron o se instalaron en los últimos %d días</item>
@@ -289,7 +289,7 @@
     <!-- Settings → Guide: what the app does, part by part. Each entry is a name and one line on how to do it. -->
     <string name="guide">Guía</string>
     <string name="guide_summary">Todo lo que podés hacer, por partes</string>
-    <string name="guide_welcome">Esto es lo que podés hacer con Launcher, por partes. Para volver a leerlo: mantené presionado un lugar vacío del escritorio → Ajustes → Guía.</string>
+    <string name="guide_welcome">Esto es lo que podés hacer con Islauncher, por partes. Para volver a leerlo: mantené presionado un lugar vacío del escritorio → Ajustes → Guía.</string>
     <string name="guide_widgets">Widgets</string>
     <string name="guide_gestures">Gestos y vibración</string>
     <string name="guide_settings">Ajustes y copias de seguridad</string>
@@ -310,7 +310,7 @@
     <string name="guide_tidy_how">Lista lo roto, lo repetido y las páginas vacías, cada uno con su Quitar; nada se quita solo</string>
     <string name="guide_paused_how">Las que pausa el modo Concentración o Bienestar digital quedan en gris; Ajustes → Escritorio puede ocultarlas</string>
     <string name="guide_pin">Atajos de otras apps</string>
-    <string name="guide_pin_how">Cuando una app, como el navegador, agrega un atajo al escritorio, Launcher te pregunta antes</string>
+    <string name="guide_pin_how">Cuando una app, como el navegador, agrega un atajo al escritorio, Islauncher te pregunta antes</string>
     <string name="guide_widget_add_how">Mantené presionado un lugar vacío → Agregar widget; buscalo por app o por nombre, con su vista previa y su tamaño</string>
     <string name="guide_resize_how">Mantené presionado un widget → Cambiar tamaño y arrastrá los puntos de sus bordes; tocá afuera para terminar</string>
     <string name="guide_reconfigure_how">Mantené presionado un widget → Volver a configurar, y después tocalo: se abre de nuevo su configuración, salvo que no tenga o sea opcional</string>
@@ -334,9 +334,9 @@
     <string name="guide_scroller">Recorrer rápido</string>
     <string name="guide_scroller_how">Arrastrá la barra del borde derecho de la lista</string>
     <plurals name="guide_unused_how">
-        <item quantity="one">Las apps que no abriste desde Launcher en %1$d día, cada una con Desinstalar; la lista aparece cuando Launcher lleva ese tiempo contando aperturas</item>
-        <item quantity="many">Las apps que no abriste desde Launcher en %1$d días, cada una con Desinstalar; la lista aparece cuando Launcher lleva ese tiempo contando aperturas</item>
-        <item quantity="other">Las apps que no abriste desde Launcher en %1$d días, cada una con Desinstalar; la lista aparece cuando Launcher lleva ese tiempo contando aperturas</item>
+        <item quantity="one">Las apps que no abriste desde Islauncher en %1$d día, cada una con Desinstalar; la lista aparece cuando Islauncher lleva ese tiempo contando aperturas</item>
+        <item quantity="many">Las apps que no abriste desde Islauncher en %1$d días, cada una con Desinstalar; la lista aparece cuando Islauncher lleva ese tiempo contando aperturas</item>
+        <item quantity="other">Las apps que no abriste desde Islauncher en %1$d días, cada una con Desinstalar; la lista aparece cuando Islauncher lleva ese tiempo contando aperturas</item>
     </plurals>
     <string name="guide_search_open">Abrir la búsqueda</string>
     <string name="guide_search_open_how">Tocá la barra de abajo, o apretá Inicio en la página principal; Ir en el teclado abre el primer resultado</string>
@@ -361,7 +361,7 @@
     </plurals>
     <string name="guide_instead_how">Elegí una app sana en Ajustes → Cajón de apps: la pausa te la ofrece, sin esperar</string>
     <string name="guide_poison_where">Dónde frena</string>
-    <string name="guide_poison_where_how">En todo lo que abre Launcher: íconos, dock, gestos, atajos y búsqueda; no en las notificaciones ni en Recientes</string>
+    <string name="guide_poison_where_how">En todo lo que abre Islauncher: íconos, dock, gestos, atajos y búsqueda; no en las notificaciones ni en Recientes</string>
     <string name="guide_swipe_up">Deslizar hacia arriba</string>
     <string name="guide_swipe_up_how">En cualquier parte del escritorio, salvo en un ícono del dock con su propio deslizamiento, abre el cajón de apps</string>
     <string name="guide_swipe_down">Deslizar hacia abajo</string>
@@ -372,11 +372,11 @@
     <string name="guide_haptics_how">Una vibración suave al mantener presionado, soltar, tirar y deslizar; la podés apagar en Ajustes → Gestos</string>
     <string name="guide_open_settings">Abrir Ajustes</string>
     <string name="guide_open_settings_how">Mantené presionado un lugar vacío del escritorio → Ajustes</string>
-    <string name="guide_home_app_how">Ajustes → App de inicio: elegí Launcher para que el botón de inicio lo abra; solo así andan los atajos de una app y los de otras apps</string>
+    <string name="guide_home_app_how">Ajustes → App de inicio: elegí Islauncher para que el botón de inicio lo abra; solo así andan los atajos de una app y los de otras apps</string>
     <string name="guide_backup">Copia manual</string>
     <string name="guide_backup_how">Guardá el escritorio, el dock, las pestañas y los ajustes en un archivo y restauralos después; tras reinstalar, los atajos del escritorio se vuelven a agregar desde su app</string>
     <string name="guide_weekly_how">Una copia nueva por semana en la carpeta que elijas; las viejas quedan</string>
     <string name="guide_nova_how">Trae el escritorio, el dock, las pestañas, las apps ocultas y las grillas de un archivo .novabackup</string>
     <string name="guide_offline">Sin internet</string>
-    <string name="guide_offline_how">Launcher no tiene permiso de red, así que no puede enviar nada; las copias se guardan en el teléfono</string>
+    <string name="guide_offline_how">Islauncher no tiene permiso de red, así que no puede enviar nada; las copias se guardan en el teléfono</string>
 </resources>
