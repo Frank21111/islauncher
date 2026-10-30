@@ -54,10 +54,19 @@ A launcher sees every app you have and every app you open, so this one is built 
 **Home screen**
 
 - Desktop pages with apps, shortcuts and widgets on a grid that places items in half-cell steps.
-- Long-press an item for its menu (an app's shortcuts, app info, uninstall and remove, plus "set up again" on a
-  widget), or drag it to move it. Uninstall opens Android's own confirmation, and system apps do not offer it. Once
+- Long-press an item for its menu (an app's shortcuts, app info, uninstall and remove, plus "resize" and "set up
+  again" on a widget), or drag it to move it. Uninstall opens Android's own confirmation, and system apps do not offer it. Once
   the app is gone, its icons on the desktop and in the dock go too; its widgets stay for Tidy up.
   Holding a dragged item at the side of the screen flips to the page on that side.
+- Throw a dragged item off the screen to remove it: let go of it with a quick flick and it flies off. A bar then
+  offers Undo for about four seconds (longer when an accessibility service asks for more time), which puts the item
+  back in its spot, or in the nearest free one if that was taken meanwhile. An undone widget is the same widget, with
+  no setup. A slow release drops the item as usual, an app let go over the dock goes into it however fast, and
+  throwing an app dragged out of the drawer only cancels it.
+- A widget's menu can resize it, unless its app gives it a fixed size. A frame appears over it, with a handle on each
+  side its app lets it stretch. Dragging a handle moves that side in half-cell steps, with a light tick each, as far
+  as the widget's app, the page and the items around it allow, and the widget takes its new size when you let go.
+  Tap outside the frame, or press Back or Home, when done.
 - The menu also moves an item to another page, picked from a list that marks the main page. The item keeps its spot
   there if it is free, else it takes the nearest free one, and if the page has no room a message says so.
 - An icon can be renamed from its menu. The new name is that icon's only: the drawer and search keep the app's name.
@@ -168,7 +177,8 @@ A launcher sees every app you have and every app you open, so this one is built 
   before, as far as the search scores it already had show), so until then the row says the date the list is ready.
   These are only candidates: see [Known limitations](#known-limitations).
 - Haptic feedback (on by default, switch in Settings → Gestures): a light vibration on long presses, drops (a
-  different one when there is no room), swipe gestures, the double tap and settings controls. The phone's own touch
+  different one when there is no room), throws, each step of a widget's resize, swipe gestures, the double tap and
+  settings controls. The phone's own touch
   vibration setting still applies.
 
 **Backups**
@@ -285,7 +295,6 @@ may create widgets.
   carry their icons. After restoring, add them again from the app's menu or from the app itself.
 - **Some widgets start as placeholders.** This happens after a Nova import, and after restoring a backup whose
   widgets no longer exist on the device. Tap each placeholder to bind it and run its setup.
-- **Widgets cannot be resized.** They keep the size they were added with (or imported with from Nova).
 - **There are no folders.** A Nova import skips Nova's folders, its private-space tab and Nova's own actions, such as
   "open drawer".
 - **App menus list shortcuts only for the main profile.** A work profile app's menu lists none, and a shortcut in a

@@ -566,4 +566,81 @@ class ModelTest {
         val twins = Layout(desktop = listOf(listOf(a), listOf(a)))
         assertEquals(listOf(emptyList(), listOf(a, a.copy(cell = Cell(1f, 0f)))), twins.moved(0, a, 1, Cell(0f, 0f)).desktop)
     }
+
+    @Test
+    fun aResizedSideSnapsToHalfCellsWithinItsLimitsThePageAndItsNeighbours() {
+        val w = Item.Widget("w", 7, Cell(1f, 1f, 2f, 2f))
+        val right = Item.Icon(App("a/a.A#0"), "A", Cell(4f, 2f)) // beside its rows
+        val below = Item.Icon(App("b/b.B#0"), "B", Cell(1.5f, 4f)) // under its columns
+        val corner = Item.Icon(App("c/c.C#0"), "C", Cell(0f, 0f)) // diagonal: never in the way
+        val layout = Layout(desktop = listOf(listOf(corner, w, right, below)))
+        val free = Limits(minW = 1f, minH = 1.5f)
+        fun stretched(edge: Edge, by: Float, limits: Limits = free) = layout.stretched(0, w, edge, by, limits)
+
+        assertEquals(Cell(1f, 1f, 2.5f, 2f), stretched(Edge.RIGHT, 0.6f)) // half cells
+        assertEquals(w.cell, stretched(Edge.RIGHT, 0.2f))
+        assertEquals(Cell(1f, 1f, 3f, 2f), stretched(Edge.RIGHT, 5f)) // up to its neighbour
+        assertEquals(Cell(1f, 1f, 2.5f, 2f), stretched(Edge.RIGHT, 5f, free.copy(maxW = 2.5f))) // its max
+        assertEquals(Cell(1f, 1f, 1f, 2f), stretched(Edge.RIGHT, -5f)) // its min
+        assertEquals(Cell(0f, 1f, 3f, 2f), stretched(Edge.LEFT, -4f)) // past the corner item, to the page's side
+        assertEquals(Cell(2f, 1f, 1f, 2f), stretched(Edge.LEFT, 1.8f))
+        assertEquals(Cell(1f, 1f, 2f, 3f), stretched(Edge.BOTTOM, 4f))
+        assertEquals(Cell(1f, 0f, 2f, 3f), stretched(Edge.TOP, -0.8f))
+        assertEquals(Cell(1f, 1.5f, 2f, 1.5f), stretched(Edge.TOP, 2f))
+        // On its own page, the grid stops it.
+        assertEquals(Cell(1f, 1f, 4f, 4f), Layout(desktop = listOf(listOf(w))).stretched(0, w, Edge.RIGHT, 9f, free).let {
+            Layout(desktop = listOf(listOf(w.copy(cell = it)))).stretched(0, w.copy(cell = it), Edge.BOTTOM, 9f, free)
+        })
+        // Smaller than its min already (a Nova import, a provider update): it may grow, never shrink further.
+        val small = Item.Widget("s", 8, Cell(0f, 0f, 1f, 1f))
+        val tight = Layout(desktop = listOf(listOf(small)))
+        assertEquals(small.cell, tight.stretched(0, small, Edge.RIGHT, -1f, Limits(2f, 2f)))
+        assertEquals(Cell(0f, 0f, 3f, 1f), tight.stretched(0, small, Edge.RIGHT, 2f, Limits(2f, 2f)))
+    }
+
+    @Test
+    fun resizingAnItemKeepsItsPlaceUnlessItWouldOverlapOrLeaveThePage() {
+        val w = Item.Widget("w", 7, Cell(1f, 1f, 2f, 2f))
+        val a = Item.Icon(App("a/a.A#0"), "A", Cell(4f, 2f))
+        val layout = Layout(desktop = listOf(listOf(w, a)))
+        assertEquals(listOf(w.copy(cell = Cell(0f, 1f, 3f, 2.5f)), a), layout.resized(0, w, Cell(0f, 1f, 3f, 2.5f)).desktop[0])
+        assertEquals(layout, layout.resized(0, w, Cell(1f, 1f, 3.5f, 2f))) // onto A
+        assertEquals(layout, layout.resized(0, w, Cell(1f, 1f, 2f, 4.5f))) // off the page
+        assertEquals(layout, layout.resized(0, w.copy(widgetId = 8), Cell(1f, 1f, 1f, 1f))) // not there
+        assertEquals(layout, layout.resized(1, w, Cell(1f, 1f, 1f, 1f)))
+    }
+
+    @Test
+    fun aResizeKeepsAnOverlapTheWidgetAlreadyHad() {
+        val w = Item.Widget("w", 7, Cell(0f, 0f, 2f, 2f))
+        val a = Item.Icon(App("a/a.A#0"), "A", Cell(1f, 1f)) // under it already: a Nova import that let items overlap
+        val layout = Layout(desktop = listOf(listOf(w, a)))
+        val wider = layout.stretched(0, w, Edge.RIGHT, 1f, Limits(1f, 1f))
+        val shorter = layout.stretched(0, w, Edge.BOTTOM, -0.5f, Limits(1f, 1f))
+        assertEquals(Cell(0f, 0f, 3f, 2f), wider)
+        assertEquals(Cell(0f, 0f, 2f, 1.5f), shorter)
+        assertEquals(listOf(w.copy(cell = wider), a), layout.resized(0, w, wider).desktop[0])
+        assertEquals(listOf(w.copy(cell = shorter), a), layout.resized(0, w, shorter).desktop[0])
+    }
+
+    @Test
+    fun aWidgetsResizeSpanIgnoresAMinResizeAboveItsMinAndAMaxBelowIt() {
+        assertEquals(1.5f to 4f, resizeSpan(250f, 110f, 400f, 100f, 5))
+        assertEquals(2.5f to 0f, resizeSpan(250f, 0f, 0f, 100f, 5)) // neither set
+        assertEquals(2.5f to 2.5f, resizeSpan(250f, 0f, 250f, 100f, 5))
+        assertEquals(1f to 0f, resizeSpan(100f, 200f, 0f, 100f, 5)) // a min resize above the min: none
+        assertEquals(2.5f to 0f, resizeSpan(250f, 0f, 180f, 100f, 5)) // a max below the min: none
+        assertEquals(5f to 0f, resizeSpan(900f, 0f, 0f, 100f, 5)) // no wider than the grid
+    }
+
+    @Test
+    fun anItemPutBackTakesItsSpotElseTheNearestFreeOneElseAnotherPage() {
+        val a = Item.Icon(App("a/a.A#0"), "A", Cell(2f, 2f))
+        val b = Item.Icon(App("b/b.B#0"), "B", Cell(2f, 2f))
+        val full = Item.Widget("f", 1, Cell(0f, 0f, 5f, 5f))
+        assertEquals(listOf(emptyList(), listOf(a)), Layout(desktop = listOf(emptyList(), emptyList())).placed(1, a).desktop)
+        assertEquals(listOf(b, a.copy(cell = Cell(2f, 1f))), Layout(desktop = listOf(listOf(b))).placed(0, a).desktop[0]) // taken meanwhile
+        assertEquals(listOf(listOf(full), listOf(a)), Layout(desktop = listOf(listOf(full), emptyList())).placed(0, a).desktop)
+        assertEquals(listOf(listOf(a)), Layout().placed(3, a).desktop) // its page is gone
+    }
 }

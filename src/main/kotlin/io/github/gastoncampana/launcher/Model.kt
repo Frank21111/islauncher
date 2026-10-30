@@ -14,6 +14,7 @@ import kotlin.math.floor
 import kotlin.math.ln
 import kotlin.math.log10
 import kotlin.math.pow
+import kotlin.math.round
 
 /** Stable id of a launchable activity: "<flattened component>#<user serial number>". */
 typealias AppId = String
@@ -143,11 +144,11 @@ private fun Item.at(cell: Cell): Item = when (this) {
 
 /**
  * Adds [item], shrunk to the grid if bigger, at the free spot nearest its cell: on page [home] if that has room,
- * else on the first page that does, else on a new page.
+ * else on the first page that does, else on a new page. Also how a thrown item comes back on Deshacer.
  */
-private fun Layout.placed(home: Int?, item: Item): Layout {
+fun Layout.placed(home: Int?, item: Item): Layout {
     val want = item.cell.copy(w = minOf(item.cell.w, columns.toFloat()), h = minOf(item.cell.h, rows.toFloat()))
-    for (page in listOfNotNull(home) + desktop.indices.filter { it != home }) {
+    for (page in listOfNotNull(home?.takeIf { it in desktop.indices }) + desktop.indices.filter { it != home }) {
         val cell = nearestFree(desktop[page], want) ?: continue
         return copy(desktop = desktop.replaced(page) { it + item.at(cell) })
     }
@@ -265,6 +266,65 @@ fun Layout.moved(from: Int?, item: Item, to: Int, want: Cell): Layout {
     val others = if (from == to) desktop[to] - item else desktop[to]
     val moved = item.at(nearestFree(others, want.copy(w = item.cell.w, h = item.cell.h)) ?: return this)
     return copy(desktop = desktop.mapIndexed { i, page -> if (i == to) others + moved else if (i == from) page - item else page })
+}
+
+/** A side of a desktop item, which its resize frame drags. */
+enum class Edge { LEFT, TOP, RIGHT, BOTTOM }
+
+/** The sizes a widget may be resized to, in cells: at least [minW]×[minH], at most [maxW]×[maxH] (0: only the grid's). */
+data class Limits(val minW: Float, val minH: Float, val maxW: Float = 0f, val maxH: Float = 0f)
+
+/**
+ * One side's least and most cells in a widget's [Limits], from its provider's [min], [minResize] and [maxResize] sizes
+ * in dp, rounded as [widgetSpan] rounds a new widget's. As the platform documents, a min resize size above the min
+ * has no effect, nor a max one below it; 0 is none.
+ */
+fun resizeSpan(min: Float, minResize: Float, maxResize: Float, cellDp: Float, max: Int): Pair<Float, Float> =
+    widgetSpan(if (minResize > 0 && minResize < min) minResize else min, 0, cellDp, max) to
+        if (maxResize > 0 && maxResize >= min) widgetSpan(maxResize, 0, cellDp, max) else 0f
+
+/**
+ * [item]'s cell on desktop [page] with its [edge] dragged [by] cells (right and down are positive), snapped to half
+ * cells, within [limits], the page and the items beside it. A limit it already breaks only keeps it from getting worse.
+ */
+fun Layout.stretched(page: Int, item: Item, edge: Edge, by: Float, limits: Limits): Cell {
+    val (x, y, w, h) = item.cell
+    val others = (desktop.getOrNull(page).orEmpty() - item).map { it.cell }
+    val rowsBeside = others.filter { it.y < y + h && y < it.y + it.h }
+    val columnsBeside = others.filter { it.x < x + w && x < it.x + it.w }
+    fun snapped(side: Float) = round((side + by) * 2) / 2
+    fun clamp(to: Float, now: Float, low: Float, high: Float) = to.coerceIn(minOf(low, now), maxOf(high, now))
+    return when (edge) {
+        Edge.RIGHT -> {
+            val wall = rowsBeside.filter { it.x >= x + w }.minOfOrNull { it.x } ?: columns.toFloat()
+            item.cell.copy(w = clamp(snapped(x + w), x + w, x + limits.minW, if (limits.maxW > 0) minOf(wall, x + limits.maxW) else wall) - x)
+        }
+        Edge.BOTTOM -> {
+            val wall = columnsBeside.filter { it.y >= y + h }.minOfOrNull { it.y } ?: rows.toFloat()
+            item.cell.copy(h = clamp(snapped(y + h), y + h, y + limits.minH, if (limits.maxH > 0) minOf(wall, y + limits.maxH) else wall) - y)
+        }
+        Edge.LEFT -> {
+            val wall = rowsBeside.filter { it.x + it.w <= x }.maxOfOrNull { it.x + it.w } ?: 0f
+            val left = clamp(snapped(x), x, if (limits.maxW > 0) maxOf(wall, x + w - limits.maxW) else wall, x + w - limits.minW)
+            item.cell.copy(x = left, w = x + w - left)
+        }
+        Edge.TOP -> {
+            val wall = columnsBeside.filter { it.y + it.h <= y }.maxOfOrNull { it.y + it.h } ?: 0f
+            val top = clamp(snapped(y), y, if (limits.maxH > 0) maxOf(wall, y + h - limits.maxH) else wall, y + h - limits.minH)
+            item.cell.copy(y = top, h = y + h - top)
+        }
+    }
+}
+
+/**
+ * [item] on desktop [page] at [cell], where it stays in the page's order; unchanged when it would leave the page or
+ * overlap an item it did not overlap already (a Nova import may have let them).
+ */
+fun Layout.resized(page: Int, item: Item, cell: Cell): Layout {
+    val items = desktop.getOrNull(page) ?: return this
+    val i = items.indexOf(item)
+    if (i < 0 || !fits(cell) || (items - item).any { it.cell.overlaps(cell) && !it.cell.overlaps(item.cell) }) return this
+    return copy(desktop = desktop.replaced(page) { it.replaced(i) { item.at(cell) } })
 }
 
 /**

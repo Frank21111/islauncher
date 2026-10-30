@@ -193,7 +193,10 @@ class Launcher : ComponentActivity() {
         override fun onPackageRemoved(packageName: String, user: UserHandle) {
             if (uninstalling == packageName to user) {
                 uninstalling = null
-                update { it.withoutApp(packageName, users.getSerialNumberForUser(user), userSerial) }
+                val without = { layout: Layout -> layout.withoutApp(packageName, users.getSerialNumberForUser(user), userSerial) }
+                update(without)
+                // A thrown icon of it does not come back on Deshacer either (an icon holds no widget id to free).
+                thrown?.let { t -> if (without(Layout(desktop = listOf(listOf(t.item)))).desktop[0].isEmpty()) thrown = null }
             }
             reload(packageName)
         }
@@ -264,6 +267,7 @@ class Launcher : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         host.stopListening()
+        settle() // leaving ends the undo of a thrown item
         closeAll() // come back to a clean home screen after opening an app
         hideDrawer() // gone on return, rather than fading out then
     }
@@ -553,6 +557,36 @@ class Launcher : ComponentActivity() {
         updatePage(page) { it - item }
     }
 
+    /**
+     * The item last thrown off the desktop, while its bar offers Deshacer. A widget keeps its id until [settle], so
+     * undoing brings the same one back. If the process dies first, the startup cleanup in [onCreate] frees it, unless
+     * an unreadable layout was set aside (that skips the cleanup): then the id stays allocated, unused.
+     */
+    var thrown by mutableStateOf<Place.Desktop?>(null)
+        private set
+
+    /** Takes [item] off desktop [page], to undo with [undoThrow]; the one thrown before goes for good. */
+    fun throwAway(page: Int, item: Item) {
+        settle()
+        if (item !in layout.desktop.getOrNull(page).orEmpty()) return
+        updatePage(page) { it - item }
+        thrown = Place.Desktop(page, item)
+    }
+
+    /** Puts the item last thrown back on its page and cell, else the nearest free spot, else another page. */
+    fun undoThrow() {
+        val t = thrown ?: return
+        thrown = null
+        update { it.placed(t.page, t.item) }
+    }
+
+    /** The undo bar is gone: the item last thrown goes for good, a widget's id freed as [remove] frees it. */
+    fun settle() {
+        val t = thrown ?: return
+        thrown = null
+        (t.item as? Item.Widget)?.let(::release)
+    }
+
     /** Turns a bound widget back into a placeholder, to set it up again (e.g. a habit widget on the wrong habit). */
     fun unbind(page: Int, item: Item.Widget) {
         release(item)
@@ -636,6 +670,17 @@ class Launcher : ComponentActivity() {
         val density = resources.displayMetrics.density
         return widgetSpan(info.minWidth / density, info.targetCellWidth, cellSize.width.value, layout.columns) to
             widgetSpan(info.minHeight / density, info.targetCellHeight, cellSize.height.value, layout.rows)
+    }
+
+    /** Widget [item]'s provider while it is bound (not a Nova placeholder), else null. A binder call. */
+    fun widgetInfo(item: Item.Widget): AppWidgetProviderInfo? = if (item.widgetId == 0) null else widgetManager.getAppWidgetInfo(item.widgetId)
+
+    /** The sizes widget [info] may be resized to, in cells rounded as [widgetCells] rounds a new widget's. */
+    fun resizeLimits(info: AppWidgetProviderInfo): Limits {
+        val dp = resources.displayMetrics.density
+        val (minW, maxW) = resizeSpan(info.minWidth / dp, info.minResizeWidth / dp, info.maxResizeWidth / dp, cellSize.width.value, layout.columns)
+        val (minH, maxH) = resizeSpan(info.minHeight / dp, info.minResizeHeight / dp, info.maxResizeHeight / dp, cellSize.height.value, layout.rows)
+        return Limits(minW, minH, maxW, maxH)
     }
 
     /**

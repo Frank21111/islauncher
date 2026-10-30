@@ -40,19 +40,24 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.IndicationNodeFactory
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
@@ -94,6 +99,7 @@ import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -111,6 +117,10 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -161,7 +171,9 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -235,6 +247,9 @@ private const val ICON_SHARE = 0.62f // of a cell's width, at most: Nova's icon 
 private const val PRESSED_SCALE = 0.92f // an icon while the finger is on it
 private const val DOCK_LOOPS = 1000 // virtual dock pages, so it scrolls around in both directions
 private const val EDGE_HOLD_MS = 600L // holding a dragged item at a side this long flips the page
+private const val THROW_DP_PER_S = 3000f // a dragged desktop item released this fast is thrown off; a calibration knob
+private const val THROW_MS = 200 // a thrown item's flight out, fading
+private const val HELD_STILL_MS = 40L // no move this long before a release: the finger stopped (Android's own rule)
 private const val PAUSE_SECONDS = 10 // before a poison app opens
 private const val PAUSE_STEP_SECONDS = 5 // added for each time it was opened today
 
@@ -243,6 +258,7 @@ sealed interface Popup {
     data class DesktopMenu(val page: Int, val at: Offset) : Popup
     data class ItemMenu(val page: Int, val item: Item) : Popup
     data class MoveItem(val page: Int, val item: Item) : Popup
+    data class Resize(val page: Int, val item: Item.Widget) : Popup
     data class DockMenu(val virtualPage: Int, val slot: Int) : Popup
     data class AppMenu(val id: AppId) : Popup
     data class TabMenu(val index: Int) : Popup
@@ -344,6 +360,17 @@ private fun Home(l: Launcher, mover: Mover) {
             pager.animateScrollToPage(next)
         }
     }
+    // "Quitado · Deshacer" while an item thrown off can come back; its host is a polite live region for TalkBack.
+    val bar = remember { SnackbarHostState() }
+    val removed = stringResource(R.string.removed)
+    val undo = stringResource(R.string.undo)
+    LaunchedEffect(l.thrown) {
+        val t = l.thrown ?: return@LaunchedEffect // settled elsewhere: this cancels the bar shown
+        val undone = bar.showSnackbar(removed, undo, duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed
+        // A throw that replaced it before this effect is cancelled keeps its own bar.
+        if (l.thrown !== t) return@LaunchedEffect
+        if (undone) l.undoThrow() else l.settle()
+    }
     Box(Modifier.fillMaxSize()) {
         Column(
             Modifier
@@ -358,13 +385,18 @@ private fun Home(l: Launcher, mover: Mover) {
                         l.expandNotifications()
                     },
                 )
+                // Under the resize frame, TalkBack must not reach (nor click) what it covers.
+                .then(if (l.popup is Popup.Resize) Modifier.clearAndSetSemantics {} else Modifier)
                 .systemBarsPadding(),
         ) {
-            HorizontalPager(
-                pager,
-                Modifier.weight(1f).onGloballyPositioned { mover.bounds = it.boundsInRoot() },
-                beyondViewportPageCount = pages,
-            ) { page -> DesktopPage(l, mover, page) }
+            Box(Modifier.weight(1f)) {
+                HorizontalPager(
+                    pager,
+                    Modifier.fillMaxSize().onGloballyPositioned { mover.bounds = it.boundsInRoot() },
+                    beyondViewportPageCount = pages,
+                ) { page -> DesktopPage(l, mover, page) }
+                SnackbarHost(bar, Modifier.align(Alignment.BottomCenter))
+            }
             PageLine(pager)
             Dock(l, mover)
             SearchPill(l)
@@ -373,6 +405,24 @@ private fun Home(l: Launcher, mover: Mover) {
             val size = with(LocalDensity.current) { d.size.toSize().toDpSize() }
             Box(Modifier.offset { (d.pointer - d.grab).round() }.size(size).drawBehind { drawLayer(d.layer) })
         }
+        mover.flight?.let { f ->
+            // Flies on the throw's way while it fades, then leaves the desktop.
+            val t = remember(f) { Animatable(0f) }
+            LaunchedEffect(f) {
+                t.animateTo(1f, tween(THROW_MS, easing = LinearEasing))
+                l.throwAway(f.page, f.drag.item)
+                mover.flight = null
+            }
+            val size = with(LocalDensity.current) { f.drag.size.toSize().toDpSize() }
+            Box(
+                Modifier
+                    .offset { (f.drag.pointer - f.drag.grab + f.velocity * (t.value * THROW_MS / 1000f)).round() }
+                    .size(size)
+                    .graphicsLayer { alpha = 1f - t.value }
+                    .drawBehind { drawLayer(f.drag.layer) },
+            )
+        }
+        (l.popup as? Popup.Resize)?.let { ResizeFrame(l, mover, it) }
     }
 }
 
@@ -382,11 +432,19 @@ private fun Home(l: Launcher, mover: Mover) {
  */
 private class Drag(val page: Int?, val item: Item, val layer: GraphicsLayer, val size: IntSize, val grab: Offset) {
     var pointer by mutableStateOf(Offset.Zero) // root coordinates
+    val velocity = VelocityTracker() // of [pointer]: root coordinates, so a page flip under the finger adds none
 }
 
-/** Drags items onto the desktop page shown (the nearest free spot) or into an empty dock slot. */
+/** A desktop item thrown off at [velocity] (px/s): Home flies it out, then takes it off [page]. */
+private class Flight(val page: Int, val drag: Drag, val velocity: Offset)
+
+/**
+ * Drags items onto the desktop page shown (the nearest free spot) or into an empty dock slot; a desktop item released
+ * at a throw's speed is thrown off instead, with a bar to undo.
+ */
 private class Mover(private val l: Launcher, private val haptic: (HapticFeedbackType) -> Unit) {
     var drag by mutableStateOf<Drag?>(null)
+    var flight by mutableStateOf<Flight?>(null)
     var pager: PagerState? = null // the desktop's, set by Home
     var bounds = Rect.Zero // the desktop pager, in root coordinates
     var dock = Rect.Zero
@@ -399,12 +457,26 @@ private class Mover(private val l: Launcher, private val haptic: (HapticFeedback
         return if (x < bounds.left + margin) -1 else if (x > bounds.right - margin) 1 else 0
     }
 
+    /** Whether Home draws [item] (dragged or flying) instead of its own place. */
+    fun lifted(item: Item) = drag?.item == item || flight?.drag?.item == item
+
     fun drop() {
         val d = drag ?: return
         drag = null
         if (d.page == null) l.hideDrawer()
         val app = (d.item as? Item.Icon)?.target as? Target.App
-        if (app != null && d.pointer in dock) return dropOnDock(d, app)
+        if (app != null && d.pointer in dock) return dropOnDock(d, app) // however fast: the dock is where it was aimed
+        val velocity = d.velocity.calculateVelocity().let { Offset(it.x, it.y) }
+        if (velocity.getDistance() > THROW_DP_PER_S * l.resources.displayMetrics.density) {
+            // Thrown: a desktop item goes, one from the drawer is only cancelled (nothing added).
+            if (d.page != null) {
+                haptic(HapticFeedbackType.GestureThresholdActivate)
+                flight = Flight(d.page, d, velocity)
+            } else {
+                haptic(HapticFeedbackType.Reject)
+            }
+            return
+        }
         if (d.pointer !in bounds) return // released over the search bar or page line: cancelled
         val page = pager?.currentPage ?: return
         val at = d.pointer - d.grab - bounds.topLeft
@@ -473,8 +545,9 @@ private fun DesktopPage(l: Launcher, mover: Mover, page: Int) {
         val cell = DpSize(maxWidth / l.layout.columns, maxHeight / l.layout.rows)
         SideEffect { l.cellSize = cell }
         val icon = iconSize(ICON, cell.width, cell.height - LABEL_SPACE)
-        // A paused app's icon Ajustes hides keeps its spot, saved, until the pause ends.
-        for (item in l.layout.desktop.getOrNull(page).orEmpty().filterNot { it is Item.Icon && l.hides(it.target) }) key(item) {
+        // A paused app's icon Ajustes hides keeps its spot, saved, until the pause ends. A bound widget is keyed by
+        // its id, so a resize or a move on the page keeps its cached view where it is.
+        for (item in l.layout.desktop.getOrNull(page).orEmpty().filterNot { it is Item.Icon && l.hides(it.target) }) key(if (item is Item.Widget && item.widgetId != 0) item.widgetId else item) {
             val size = DpSize(cell.width * item.cell.w, cell.height * item.cell.h)
             val at = Modifier.offset(cell.width * item.cell.x, cell.height * item.cell.y).size(size)
             Movable(l, mover, page, item, { l.popup = Popup.ItemMenu(page, item) }, at) {
@@ -513,7 +586,7 @@ private fun Movable(
             .drawWithContent {
                 // Recorded while lifted too, so the copy under the finger springs back from PressScale's pressed size.
                 layer.record { this@drawWithContent.drawContent() }
-                if (mover.drag?.item != item) drawLayer(layer) // lifted: Home draws it under the finger
+                if (!mover.lifted(item)) drawLayer(layer) // lifted: Home draws it under the finger, or flying off
             }
             .longPressDrag(
                 item,
@@ -526,7 +599,21 @@ private fun Movable(
                     keyboard?.hide()
                     coords?.let { mover.drag = Drag(page, item, layer, it.size, grab) }
                 },
-                onDrag = { at -> coords?.let { mover.drag?.pointer = it.localToRoot(at) } },
+                onDrag = { change ->
+                    val d = mover.drag
+                    val c = coords
+                    if (d != null && c != null) {
+                        d.pointer = c.localToRoot(change.position)
+                        // As Android's own tracker: the release repeats the last position, so it adds no sample (it
+                        // would read as a stop), but a finger held still before it lifts makes no throw.
+                        if (change.pressed) {
+                            change.historical.forEach { d.velocity.addPosition(it.uptimeMillis, c.localToRoot(it.position)) }
+                            d.velocity.addPosition(change.uptimeMillis, d.pointer)
+                        } else if (change.uptimeMillis - change.previousUptimeMillis > HELD_STILL_MS) {
+                            d.velocity.resetTracking()
+                        }
+                    }
+                },
                 onDrop = mover::drop,
                 onCancel = { if (mover.drag?.item == item) mover.drag = null },
             ),
@@ -542,7 +629,10 @@ private fun DesktopMenu(l: Launcher, menu: Popup.DesktopMenu) {
             MenuItem(l, stringResource(R.string.menu_wallpaper)) {
                 l.startIntent(Intent.createChooser(Intent(Intent.ACTION_SET_WALLPAPER), null), l.getString(R.string.open_target_wallpaper_picker))
             }
-            MenuItem(l, stringResource(R.string.settings)) { l.settingsOpen = true }
+            MenuItem(l, stringResource(R.string.settings)) {
+                l.settle() // Ajustes can remove, reorder or regrid the pages a thrown item would go back to
+                l.settingsOpen = true
+            }
         }
     }
 }
@@ -604,6 +694,11 @@ private fun ItemMenu(l: Launcher, page: Int, item: Item) {
                 l.updatePage(page) { items -> items.map { if (it == item) item.copy(label = name) else it } }
             }
         }
+        if (item is Item.Widget) {
+            // Composed only while shown, so the provider's binder lookup runs on opening; none for a placeholder.
+            val resizable = remember(item) { (l.widgetInfo(item)?.resizeMode ?: AppWidgetProviderInfo.RESIZE_NONE) != AppWidgetProviderInfo.RESIZE_NONE }
+            if (resizable) MenuItem(l, stringResource(R.string.widget_resize)) { l.popup = Popup.Resize(page, item) }
+        }
         if (l.layout.desktop.size > 1) MenuItem(l, stringResource(R.string.desktop_move_to_page)) { l.popup = Popup.MoveItem(page, item) }
         if (app != null) MenuItem(l, stringResource(R.string.menu_app_info)) { l.showInfo(app) }
         if (app != null && target is Target.App && app.removable) MenuItem(l, stringResource(R.string.uninstall)) { l.uninstall(app) }
@@ -619,6 +714,121 @@ private fun ItemMenu(l: Launcher, page: Int, item: Item) {
                 l.update { it.moved(page, item, to, item.cell) }
                 if (l.layout === before) l.toast(l.getString(R.string.desktop_no_room_page_n, to + 1))
             }
+        }
+    }
+}
+
+/**
+ * [Popup.Resize]'s frame over its widget, with a handle on each side its provider's resizeMode lets move. A handle
+ * moves its side in half cells, a tick each, within the widget's limits, the page and its neighbours; the widget takes
+ * the new size on release. A tap outside ends it, as Back, home and [Launcher.closeAll] do.
+ */
+@Composable
+private fun ResizeFrame(l: Launcher, mover: Mover, p: Popup.Resize) {
+    val haptic = rememberHaptic(l)
+    val info = remember(p.item.widgetId) { l.widgetInfo(p.item) } ?: return
+    val limits = remember(info, l.layout.columns, l.layout.rows) { l.resizeLimits(info) }
+    var cell by remember(p) { mutableStateOf(p.item.cell) }
+    val bounds = mover.bounds // the desktop pager, in root coordinates: Home's too
+    val unit = Size(bounds.width / l.layout.columns, bounds.height / l.layout.rows) // px per cell
+    val frame = Rect(
+        Offset(bounds.left + cell.x * unit.width, bounds.top + cell.y * unit.height),
+        Size(cell.w * unit.width, cell.h * unit.height),
+    )
+    val sides = buildList {
+        if (info.resizeMode and AppWidgetProviderInfo.RESIZE_HORIZONTAL != 0) addAll(listOf(Edge.LEFT, Edge.RIGHT))
+        if (info.resizeMode and AppWidgetProviderInfo.RESIZE_VERTICAL != 0) addAll(listOf(Edge.TOP, Edge.BOTTOM))
+    }
+    val handle = 48.dp
+    val density = LocalDensity.current
+    val (handlePx, dotPx) = with(density) { handle.toPx() to 9.dp.toPx() }
+    /** The widget takes [to], else the frame goes back to the widget's size. */
+    fun commit(to: Cell): Boolean {
+        val before = l.layout
+        if (to != p.item.cell) l.update { it.resized(p.page, p.item, to) }
+        if (l.layout === before) {
+            cell = p.item.cell
+            return false
+        }
+        l.popup = Popup.Resize(p.page, p.item.copy(cell = to))
+        return true
+    }
+    val title = stringResource(R.string.widget_resize)
+    val grow = stringResource(R.string.resize_grow)
+    val shrink = stringResource(R.string.resize_shrink)
+    // Over all of Home, so what is under it takes no touch; a tap on the frame or its handles leaves it open.
+    Box(
+        Modifier
+            .fillMaxSize()
+            .semantics { paneTitle = title }
+            .pointerInput(frame) { detectTapGestures { if (it !in frame.inflate(handle.toPx() / 2)) l.popup = null } },
+    ) {
+        Box(
+            Modifier
+                .offset { frame.topLeft.round() }
+                .size(with(density) { frame.size.toDpSize() })
+                .border(4.dp, Color.Black.copy(alpha = 0.4f), RoundedCornerShape(8.dp)) // white between dark lines: seen
+                .padding(1.dp) // over a light wallpaper or widget too
+                .border(2.dp, Color.White, RoundedCornerShape(7.dp)),
+        )
+        for (edge in sides) {
+            val across = edge == Edge.LEFT || edge == Edge.RIGHT
+            val at = when (edge) {
+                Edge.LEFT -> Offset(frame.left, frame.center.y)
+                Edge.TOP -> Offset(frame.center.x, frame.top)
+                Edge.RIGHT -> Offset(frame.right, frame.center.y)
+                Edge.BOTTOM -> Offset(frame.center.x, frame.bottom)
+            }
+            // Kept on the desktop, so a full-width widget's side handles are not half off the screen nor a top one
+            // half under the status bar (whose touches go to the system); its dot stays on the side, whole.
+            val box = Offset(
+                (at.x - handlePx / 2).coerceAtMost(bounds.right - handlePx).coerceAtLeast(bounds.left),
+                (at.y - handlePx / 2).coerceAtLeast(bounds.top),
+            )
+            val dot = Offset(at.x.coerceAtMost(bounds.right - dotPx).coerceAtLeast(bounds.left + dotPx), at.y.coerceAtLeast(bounds.top + dotPx)) - box
+            val label = stringResource(
+                when (edge) {
+                    Edge.LEFT -> R.string.resize_edge_left
+                    Edge.TOP -> R.string.resize_edge_top
+                    Edge.RIGHT -> R.string.resize_edge_right
+                    Edge.BOTTOM -> R.string.resize_edge_bottom
+                },
+            )
+            val out = if (edge == Edge.LEFT || edge == Edge.TOP) -0.5f else 0.5f // half a cell outwards
+            Box(
+                Modifier
+                    .offset { box.round() }
+                    .size(handle)
+                    .systemGestureExclusion() // at the screen's side, the drag would otherwise be Back
+                    .semantics {
+                        // TalkBack cannot drag: it moves the side half a cell per action.
+                        contentDescription = label
+                        customActions = listOf(
+                            CustomAccessibilityAction(grow) { commit(l.layout.stretched(p.page, p.item, edge, out, limits)) },
+                            CustomAccessibilityAction(shrink) { commit(l.layout.stretched(p.page, p.item, edge, -out, limits)) },
+                        )
+                    }
+                    .pointerInput(p, edge, unit) {
+                        var moved = 0f // px along the side's axis since the drag began
+                        detectDragGestures(
+                            onDragStart = { moved = 0f },
+                            onDragEnd = { commit(cell) },
+                            onDragCancel = { cell = p.item.cell },
+                        ) { change, amount ->
+                            change.consume()
+                            moved += if (across) amount.x else amount.y
+                            val next = l.layout.stretched(p.page, p.item, edge, moved / if (across) unit.width else unit.height, limits)
+                            if (next != cell) {
+                                cell = next
+                                haptic(HapticFeedbackType.SegmentFrequentTick)
+                            }
+                        }
+                    }
+                    .drawBehind {
+                        drawCircle(Color.Black.copy(alpha = 0.4f), dotPx, dot) // seen on a light wallpaper too
+                        drawCircle(Color.White, 7.dp.toPx(), dot)
+                    },
+            )
         }
     }
 }
@@ -2385,14 +2595,15 @@ private fun Modifier.onVerticalSwipe(up: () -> Unit = {}, down: () -> Unit = {})
 }
 
 /**
- * A long press, then optionally a drag past the touch slop ([onDragStart] gets the press position, [onDrag] each new one,
- * both local). It watches the Initial pass, so it wins over a hosted View (a widget), before the View gets the touch.
+ * A long press, then optionally a drag past the touch slop ([onDragStart] gets the press position, local; [onDrag]
+ * each change after it, release included). A cancel (the screen turned off, a call took the window) is [onCancel], not
+ * a drop. It watches the Initial pass, so it wins over a hosted View (a widget), before the View gets the touch.
  */
 private fun Modifier.longPressDrag(
     key: Any?,
     onLongPress: () -> Unit,
     onDragStart: (Offset) -> Unit,
-    onDrag: (Offset) -> Unit,
+    onDrag: (PointerInputChange) -> Unit,
     onDrop: () -> Unit,
     onCancel: () -> Unit,
 ) = pointerInput(key) {
@@ -2411,12 +2622,17 @@ private fun Modifier.longPressDrag(
             // Swallow the rest of the gesture, so the item gets a cancel instead of a click and the pager stays put.
             do {
                 val event = awaitPointerEvent(PointerEventPass.Initial)
-                event.changes.firstOrNull { it.id == down.id && it.pressed }?.let { change ->
-                    if (!dragging && (change.position - down.position).getDistance() > viewConfiguration.touchSlop) {
+                event.changes.firstOrNull { it.id == down.id }?.let { change ->
+                    // Compose turns a cancel into a release consumed already; nothing ahead of this consumes a real one.
+                    if (!change.pressed && change.isConsumed) {
+                        if (dragging) onCancel()
+                        return@awaitEachGesture
+                    }
+                    if (!dragging && change.pressed && (change.position - down.position).getDistance() > viewConfiguration.touchSlop) {
                         dragging = true
                         onDragStart(down.position)
                     }
-                    if (dragging) onDrag(change.position)
+                    if (dragging) onDrag(change)
                 }
                 event.changes.forEach { it.consume() }
             } while (event.changes.any { it.pressed })

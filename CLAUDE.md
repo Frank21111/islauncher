@@ -35,7 +35,9 @@ picker must see non-exported widget receivers, which a `<queries>` block misses)
   it stay saved, hidden. Shrinking the grid (`withGrid`) or removing a page (`withoutPage`) moves what no longer fits
   to the nearest free spot, else another page, else a new one: nothing is dropped. `withPageMoved` reorders desktop
   pages and keeps `defaultPage` on the main one (`shifted` reorders any list: dock pages, tabs); the item menu's
-  "Mover a otra página" is `moved` with the item's own cell. `audit` is Ajustes → Ordenar: broken icons, dock targets
+  "Mover a otra página" is `moved` with the item's own cell. A widget's resize frame drags one `Edge` with `stretched`
+  (half cells, within the provider's `Limits`, the page and the items beside it; a limit already broken only stops it
+  getting worse) and commits with `resized` (refused off the page or on a new overlap: one it had already stays). `placed` puts a thrown item back. `audit` is Ajustes → Ordenar: broken icons, dock targets
   and widgets (by the `alive` checks it is given), the same app by `packageKey` across pages or dock and page, and
   empty pages, each a `Place`; it removes nothing (its `size` leaves twins out: they may be on purpose). `withoutApp`
   drops an uninstalled package's desktop icons and dock targets. Also JSON persistence,
@@ -55,7 +57,19 @@ picker must see non-exported widget receivers, which a `<queries>` block misses)
   place a pinned shortcut and save its icon.
 - `Ui.kt`: Compose UI. Desktop pager with icons and widgets (long press opens the item menu; dragging moves the
   item, drawn from the layer it keeps recording, and holding it at a side flips the page), a wrap-around dock pager, Nova-style
-  search pill. The drawer has search (with "Buscar con" providers), one swipeable page per tab and a fast scroller.
+  search pill. A drag's `VelocityTracker` follows the pointer in root coordinates (a page flip adds no speed) with
+  Android's own rules: the release adds no sample, and one `HELD_STILL_MS` after the last move resets it, so a finger
+  held still makes no throw; a cancel (`longPressDrag` tells Compose's synthetic one by its consumed release) is no
+  drop. An app released over the dock docks however fast; otherwise, released over `THROW_DP_PER_S`, a desktop item is
+  thrown (`Mover.flight` flies its layer out for `THROW_MS`, then `Launcher.throwAway`) and a drawer one cancelled.
+  `Launcher.thrown` keeps it, its widget id still allocated, while Home's `SnackbarHost` (a polite live region with
+  the accessibility timeout) offers Deshacer (`undoThrow`); `settle` frees it through `release` on the bar's timeout,
+  the next throw, opening Ajustes (it can remove or reorder the pages) and `onStop`; uninstalling its app drops a
+  thrown icon. "Cambiar tamaño" (bound widgets whose resizeMode is not none) is `Popup.Resize`:
+  `ResizeFrame` covers all of Home, so nothing under it takes touches (Home's semantics are cleared under it), with
+  handles only on the sides resizeMode allows, kept on the desktop, each with Agrandar/Achicar actions for TalkBack;
+  `Launcher.resizeLimits` turns the provider's sizes into cells with `resizeSpan`, as `widgetCells` rounds. A bound widget is keyed by its
+  id in `DesktopPage`, so a resize or a move on its page keeps its cached view in place. The drawer has search (with "Buscar con" providers), one swipeable page per tab and a fast scroller.
   All menus and dialogs go through one `Popup` state, so `closeAll()` closes everything. Every vibration goes
   through `rememberHaptic`, which checks `Layout.haptics` (so `combinedClickable` gets `hapticFeedbackEnabled = false`
   and text fields sit in `GatedHaptics`, as they vibrate on their own when selecting text). Ajustes (desktop menu) is a
