@@ -47,7 +47,7 @@
     <string name="open_target_link">the link</string>
     <string name="open_target_email">the e-mail app</string>
 
-    <!-- What an icon or gesture opens, in "Tap: none" and "Double tap: None" -->
+    <!-- What an icon or gesture opens, in "Double tap: None" and under a dock icon's "On tap" -->
     <string name="target_none">none</string>
     <string name="target_not_installed">not installed</string>
     <string name="app_unavailable">The app is not installed or is disabled</string>
@@ -84,9 +84,11 @@
     <string name="dock_slot_taken">That dock slot is taken</string>
     <string name="dock_slot_paused">That dock slot is %1$s\'s, which is paused</string>
     <string name="paused_placed">%1$s is paused: it shows once it resumes</string>
-    <string name="dock_tap">Tap: %1$s</string>
-    <string name="dock_swipe_up">Swipe ↑: %1$s</string>
-    <string name="dock_swipe_down">Swipe ↓: %1$s</string>
+    <string name="dock_configure">Configure</string>
+    <!-- The title of an empty dock slot's Configure dialog -->
+    <string name="dock_icon">Dock icon</string>
+    <!-- What a dock icon's swipe down opens without an app of its own -->
+    <string name="notifications">Notifications</string>
     <string name="dock_pick_tap">On tap</string>
     <string name="dock_pick_swipe_up">On swipe up</string>
     <string name="dock_pick_swipe_down">On swipe down</string>
@@ -272,4 +274,96 @@
     <string name="pin_no_room">No room on the home screen</string>
     <string name="pin_add_failed">Couldn\'t add “%1$s”</string>
     <string name="pin_added">Added to home screen</string>
+
+    <!-- Settings → Guide: what the app does, part by part. Each entry is a name and one line on how to do it. -->
+    <string name="guide">Guide</string>
+    <string name="guide_summary">Everything you can do, part by part</string>
+    <string name="guide_welcome">This is what Launcher can do, part by part. To read it again: long-press an empty spot on the home screen → Settings → Guide.</string>
+    <string name="guide_widgets">Widgets</string>
+    <string name="guide_gestures">Gestures and haptics</string>
+    <string name="guide_settings">Settings and backups</string>
+    <string name="guide_move">Move an item</string>
+    <string name="guide_move_how">Long-press an icon or widget and drag it; hold it at a side of the screen to change page</string>
+    <string name="guide_throw">Remove an item</string>
+    <string name="guide_throw_how">Long-press it → Remove. Or throw it: drag it and let go with a quick flick; Undo brings it back</string>
+    <string name="guide_shortcuts">An app\'s shortcuts</string>
+    <string name="guide_shortcuts_how">Long-press an app on the home screen, in the dock or in the drawer: its shortcuts come first, and + puts one on the home screen</string>
+    <string name="guide_rename">Rename an icon</string>
+    <string name="guide_rename_how">Long-press it → Rename; the drawer and search keep the app\'s name</string>
+    <string name="guide_move_page_how">With more than one page, long-press an item → Move to another page; it keeps its spot there if that is free</string>
+    <string name="guide_uninstall_how">Long-press an app on the home screen or in the drawer → Uninstall; Android asks first, and its icons go with it. Uninstalled another way (App info, as from the dock), its icons stay for Tidy up</string>
+    <string name="guide_home_menu">Home screen menu</string>
+    <string name="guide_home_menu_how">Long-press an empty spot: Add widget, Wallpaper or Settings</string>
+    <string name="guide_pages_how">In Settings → Home screen, add, reorder and remove pages and pick the main one; a removed page\'s items move to the others</string>
+    <string name="guide_grid_how">In Settings → Home screen; a smaller grid deletes nothing, it moves what no longer fits</string>
+    <string name="guide_tidy_how">Lists what is broken, duplicated or empty, each with its own Remove; nothing goes by itself</string>
+    <string name="guide_paused_how">Apps paused by Focus mode or Digital Wellbeing are greyed out; Settings → Home screen can hide them instead</string>
+    <string name="guide_pin">Shortcuts from other apps</string>
+    <string name="guide_pin_how">When an app, such as a browser, adds a shortcut to the home screen, Launcher asks you first</string>
+    <string name="guide_widget_add_how">Long-press an empty spot → Add widget; search by app or name, with each one\'s preview and size</string>
+    <string name="guide_resize_how">Long-press a widget → Resize, then drag the dots on its sides; tap outside when done</string>
+    <string name="guide_reconfigure_how">Long-press a widget → Set up again, then tap it: its setup screen opens again, unless it has none or its setup is optional</string>
+    <string name="guide_placeholder">Widgets to set up</string>
+    <string name="guide_placeholder_how">After a Nova import, or restoring a backup whose widgets are gone, tap each + widget to set it up</string>
+    <string name="guide_dock_setup">Tap and swipe</string>
+    <string name="guide_dock_setup_how">Long-press a dock icon → Configure: what a tap and a swipe up or down on it open</string>
+    <string name="guide_dock_drop">Add to the dock</string>
+    <string name="guide_dock_drop_how">Drag an app from the drawer or the home screen onto an empty spot in the dock</string>
+    <string name="guide_dock_pages">Dock pages</string>
+    <string name="guide_dock_pages_how">Add, reorder and remove dock pages and set the icons per page in Settings → Dock; swipe the dock sideways between pages, and with Infinite scroll the last leads to the first</string>
+    <string name="guide_drawer">Open and close</string>
+    <string name="guide_drawer_how">Swipe up on the home screen; to close it, pull down from the top of the list</string>
+    <string name="guide_drawer_grid_how">Its columns, and how many rows fit on one screen, in Settings → App drawer</string>
+    <string name="guide_tabs_how">Swipe sideways from one to the next; long-press one to rename it, add a tab, or delete a tab of picked apps</string>
+    <string name="guide_tab_apps">A tab\'s apps</string>
+    <string name="guide_tab_apps_how">Settings → App drawer → the tab → Choose apps, or tick its tabs in an app\'s menu; a new tab takes its apps out of All apps tabs (such as Apps) until you turn off Hide its apps from All apps there</string>
+    <string name="guide_hide">Hide an app</string>
+    <string name="guide_hide_how">Long-press it → Hide from drawer; search still finds it</string>
+    <string name="guide_add_home_how">Long-press an app → Add to home screen, or drag it onto the home screen or the dock</string>
+    <string name="guide_scroller">Scroll fast</string>
+    <string name="guide_scroller_how">Drag the bar on the right edge of the list</string>
+    <plurals name="guide_unused_how">
+        <item quantity="one">The apps you have not opened from Launcher in %1$d day, each with Uninstall; the list is ready once Launcher has counted opens that long</item>
+        <item quantity="other">The apps you have not opened from Launcher in %1$d days, each with Uninstall; the list is ready once Launcher has counted opens that long</item>
+    </plurals>
+    <string name="guide_search_open">Open search</string>
+    <string name="guide_search_open_how">Tap the bar at the bottom, or press Home on the main page; the keyboard\'s Go opens the first result</string>
+    <string name="guide_ranking">Your apps first</string>
+    <string name="guide_ranking_how">Among equally good matches, the apps you open most come first; accents don\'t matter</string>
+    <string name="guide_calc">Calculator</string>
+    <string name="guide_calc_how" formatted="false">Type a sum, such as 125*3 or 1500 + 21%; a tap copies the result</string>
+    <string name="guide_numbers_how">Numbers are read and shown as your country writes them; Settings → App drawer can set the format</string>
+    <string name="guide_convert">Unit conversion</string>
+    <string name="guide_convert_how">Type 5 km to mi, 350 f or 2 cups in ml; a tap copies the result</string>
+    <string name="guide_actions">Phone numbers, links and e-mail</string>
+    <string name="guide_actions_how">A phone number offers Call, Send SMS and, if it is installed, WhatsApp; a link, Open, when no app matches; an e-mail address, Write</string>
+    <string name="guide_search_with_how">Hands what you typed to Google, DuckDuckGo, Play Store, Spotify or Firefox Focus</string>
+    <string name="guide_bar">The search bar</string>
+    <string name="guide_bar_how">Its buttons open the assistant and Google Lens, and the date opens your calendar</string>
+    <string name="guide_poison_how">Long-press an app in the drawer → Mark as poison, or tick them in Settings → App drawer → Poisons</string>
+    <string name="guide_pause">A pause that grows</string>
+    <plurals name="guide_pause_how">
+        <item quantity="one">A poison opens after %1$d second, plus %2$d for each time you already opened it today</item>
+        <item quantity="other">A poison opens after %1$d seconds, plus %2$d for each time you already opened it today</item>
+    </plurals>
+    <string name="guide_instead_how">Pick a healthy app in Settings → App drawer: the pause offers it, with no wait</string>
+    <string name="guide_poison_where">Where it pauses</string>
+    <string name="guide_poison_where_how">Every open through Launcher: icons, dock, gestures, shortcuts and search; not notifications or Recents</string>
+    <string name="guide_swipe_up">Swipe up</string>
+    <string name="guide_swipe_up_how">Anywhere on the home screen, except on a dock icon with a swipe of its own, it opens the app drawer</string>
+    <string name="guide_swipe_down">Swipe down</string>
+    <string name="guide_swipe_down_how">Anywhere on the home screen, except on a dock icon with a swipe of its own, it opens the notifications</string>
+    <string name="guide_double_tap_how">Tap an empty spot twice to open the app you pick in Settings → Gestures</string>
+    <string name="guide_home">Home button</string>
+    <string name="guide_home_how">Closes whatever is open: a menu, the drawer or Settings. With nothing open on the home screen, it goes to the main page, and on the main page it opens search</string>
+    <string name="guide_haptics_how">A light vibration on long presses, drops, throws and swipes; you can turn it off in Settings → Gestures</string>
+    <string name="guide_open_settings">Open Settings</string>
+    <string name="guide_open_settings_how">Long-press an empty spot on the home screen → Settings</string>
+    <string name="guide_home_app_how">Settings → Home app: pick Launcher, so the Home button opens it; only then do an app\'s shortcuts and shortcuts from other apps work</string>
+    <string name="guide_backup">Manual backup</string>
+    <string name="guide_backup_how">Save the home screen, dock, tabs and settings to a file and restore them later; after a reinstall, add home screen shortcuts again from their app</string>
+    <string name="guide_weekly_how">A new copy each week in a folder you choose; the old ones stay</string>
+    <string name="guide_nova_how">Brings the home screen, dock, tabs, hidden apps and grids from a .novabackup file</string>
+    <string name="guide_offline">No internet</string>
+    <string name="guide_offline_how">Launcher has no network permission, so it cannot send anything; backups are saved on the phone</string>
 </resources>

@@ -65,6 +65,7 @@ import kotlin.math.roundToInt
 
 private const val TAG = "Launcher"
 private const val LAYOUT_KEY = "layout"
+private const val LAUNCHED_KEY = "launched" // in prefs "launcher": set on the first launch, for the guide (opensGuide)
 private const val HOST_ID = 1024
 private const val REQUEST_CONFIGURE = 1
 private const val FOLDER_ACCESS = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
@@ -99,6 +100,13 @@ object Layouts {
     }
 
     val hasCorruptCopy get() = prefs.contains("$LAYOUT_KEY.corrupt")
+
+    /** Whether this launch opens the guide by itself ([opensGuide]): true once at most, as it notes the first launch. */
+    fun guideOnLaunch(): Boolean {
+        val launchedBefore = prefs.contains(LAUNCHED_KEY)
+        if (!launchedBefore) prefs.edit { putBoolean(LAUNCHED_KEY, true) }
+        return opensGuide(prefs.contains(LAYOUT_KEY), launchedBefore)
+    }
 
     fun update(f: (Layout) -> Layout) {
         val next = f(current)
@@ -177,6 +185,7 @@ class Launcher : ComponentActivity() {
     var focusSearch by mutableStateOf(false) // drawer opened from the search bar
     var popup by mutableStateOf<Popup?>(null)
     var settingsOpen by mutableStateOf(false) // kept when leaving, so the file pickers it opens return to it
+    var welcome = false // Ajustes opened by itself on its guide (a fresh install's first launch); cleared when it closes
     var homePresses by mutableIntStateOf(0) // home pressed while already on the home screen
         private set
     var drawerResets by mutableIntStateOf(0) // bumped to close the drawer without its exit animation
@@ -238,6 +247,8 @@ class Launcher : ComponentActivity() {
         tracked = useScores.getString(TRACKED_KEY, null)?.toDoubleOrNull()
             ?: countedSince(uses.values.map { it.second }, now()).also { useScores.edit { putString(TRACKED_KEY, "$it") } }
         backupFolder = backups.getString("folder", null)?.toUri()
+        welcome = Layouts.guideOnLaunch()
+        settingsOpen = welcome
         setContent { LauncherScreen(this) }
     }
 

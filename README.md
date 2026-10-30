@@ -80,7 +80,8 @@ A launcher sees every app you have and every app you open, so this one is built 
   - Swipe up opens the app drawer.
   - Swipe down opens the notification shade.
   - Double tap opens an app of your choice, set in Settings → Gestures.
-- The Home button goes back to the main page, and pressing it on the main page opens search.
+- The Home button closes whatever is open (a menu, the drawer, Settings). With nothing open on the home screen, it
+  goes back to the main page, and pressing it on the main page opens search.
 - The search bar has buttons for the voice assistant and Google Lens, and shows today's date, which opens your
   calendar. There is no weather, because it would need the network.
 - Apps paused by Focus mode or a Digital Wellbeing limit are greyed out. Settings → Home screen → Paused apps can
@@ -91,9 +92,10 @@ A launcher sees every app you have and every app you open, so this one is built 
 **Dock**
 
 - Several dock pages, which wrap around from the last page to the first (you can turn that off).
-- Each icon opens one app on tap and can open other apps on a swipe up or down. Long-press a slot to choose its
-  three apps. An icon without its own swipe actions opens the drawer or the notification shade, as a swipe does
-  elsewhere on the home screen.
+- Each icon opens one app on tap and can open other apps on a swipe up or down. Long-press a slot for its menu: the
+  app's shortcuts, Configure and app info (a slot with no app goes straight to Configure). Configure shows what the tap
+  and each swipe open, and its app picker brings you back to it, so all three can be set in one go. An icon without its own swipe actions opens the drawer or
+  the notification shade, as a swipe does elsewhere on the home screen.
 - Drop an app from the drawer or the desktop onto an empty dock slot.
 
 **App drawer**
@@ -125,8 +127,7 @@ A launcher sees every app you have and every app you open, so this one is built 
 - A "search with" row that hands the query to Google, DuckDuckGo, Play Store, Spotify or Firefox Focus.
 - A fast scroller. Pulling down at the top of the list closes the drawer.
 - Each app's menu lists its shortcuts and can add it to the desktop, toggle its tabs, hide it, mark it as a poison,
-  open its app info or uninstall it (not a system app). The dock's app menu offers uninstall too.
-  You can also drag an app onto the desktop or the dock.
+  open its app info or uninstall it (not a system app). You can also drag an app onto the desktop or the dock.
 
 **Poisons**
 
@@ -150,6 +151,9 @@ A launcher sees every app you have and every app you open, so this one is built 
 
 **Settings**
 
+- Settings → Guide lists what the app can do, part by part, each entry with how to do it; an entry with settings of
+  its own opens them. It opens by itself once, on the first launch of a fresh install, and never for a layout already
+  in use.
 - You can set the desktop grid, the drawer grid (its columns and how many rows fit on screen) and the number of dock
   icons per page, each from 2 to 12.
 - Shrinking the desktop grid never deletes anything. Items that no longer fit move to the nearest free spot, or to

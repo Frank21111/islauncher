@@ -343,6 +343,12 @@ fun Layout.restored(live: Map<Int, String?>): Layout {
 /** Most desktop or dock pages a restored backup keeps. */
 const val MAX_PAGES = 20
 
+/**
+ * Whether Ajustes opens on its guide by itself: on a fresh install's first launch, while no layout is [saved] (any
+ * change, a restore or a Nova import saves one, so an existing user has one), and never once [launchedBefore].
+ */
+fun opensGuide(saved: Boolean, launchedBefore: Boolean) = !saved && !launchedBefore
+
 fun Layout.toJson(): String = JSONObject()
     .put("dock", JSONArray(dock.map { page -> JSONArray(page.map { it.toJson() }) }))
     .put("desktop", JSONArray(desktop.map { page -> JSONArray(page.map { it.toJson() }) }))

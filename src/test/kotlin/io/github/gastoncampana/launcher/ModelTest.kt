@@ -355,6 +355,14 @@ class ModelTest {
     }
 
     @Test
+    fun theGuideOpensByItselfOnlyOnAFreshInstallsFirstLaunch() {
+        assertTrue(opensGuide(saved = false, launchedBefore = false))
+        assertFalse(opensGuide(saved = true, launchedBefore = false)) // an existing user's first launch of this version
+        assertFalse(opensGuide(saved = false, launchedBefore = true)) // nothing changed since the guide opened
+        assertFalse(opensGuide(saved = true, launchedBefore = true))
+    }
+
+    @Test
     fun parsePadsDockPagesAndClampsDefaultPage() {
         val layout = parseLayout("""{"dock":[[{}]],"desktop":[[]],"defaultPage":4,"tabs":[]}""")
         assertEquals(listOf(List(5) { DockIcon() }), layout.dock)

@@ -50,6 +50,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.IndicationNodeFactory
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -135,6 +136,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -260,9 +262,10 @@ sealed interface Popup {
     data class MoveItem(val page: Int, val item: Item) : Popup
     data class Resize(val page: Int, val item: Item.Widget) : Popup
     data class DockMenu(val virtualPage: Int, val slot: Int) : Popup
+    data class DockSetup(val page: Int, val slot: Int) : Popup
     data class AppMenu(val id: AppId) : Popup
     data class TabMenu(val index: Int) : Popup
-    class PickApp(val title: String, val onPick: (App?) -> Unit) : Popup
+    class PickApp(val title: String, val back: Popup? = null, val onPick: (App?) -> Unit) : Popup // back: shown again on cancel
     class Rename(val title: String, val initial: String, val onDone: (String) -> Unit) : Popup
     data class Widgets(val page: Int) : Popup
     class Pause(val app: App, val open: () -> Unit) : Popup
@@ -304,6 +307,7 @@ fun LauncherScreen(l: Launcher) {
                 is Popup.Checklist -> AppChecklist(l, p)
                 is Popup.Grid -> GridDialog(l, p)
                 is Popup.EditTab -> l.layout.tabs.getOrNull(p.index)?.let { TabDialog(l, p.index, it) }
+                is Popup.DockSetup -> l.layout.dock.getOrNull(p.page)?.getOrNull(p.slot)?.let { DockDialog(l, p, it) }
                 else -> Unit // menus render next to what they belong to
             }
         }
@@ -907,7 +911,8 @@ private fun DockSlot(l: Launcher, virtualPage: Int, slot: Int, icon: DockIcon, i
                 onClick = { l.open(tap) },
                 onLongClick = {
                     haptic(HapticFeedbackType.LongPress)
-                    l.popup = Popup.DockMenu(virtualPage, slot)
+                    // With no app, the menu would hold Configurar alone: its dialog opens straight away.
+                    l.popup = if (l.appOf(icon.tap) == null) Popup.DockSetup(page, slot) else Popup.DockMenu(virtualPage, slot)
                 },
             ),
         contentAlignment = Alignment.Center,
@@ -918,20 +923,9 @@ private fun DockSlot(l: Launcher, virtualPage: Int, slot: Int, icon: DockIcon, i
         val shortcuts = rememberShortcuts(l, app.takeIf { icon.tap is Target.App }, open)
         DropdownMenu(open && shortcuts != null, { l.popup = null }) {
             if (app != null) AppShortcuts(l, app, shortcuts.orEmpty())
-            fun pick(title: String, set: (DockIcon, Target?) -> DockIcon) {
-                l.popup = Popup.PickApp(title) { app -> l.updateDock(page, slot) { set(it, app?.let { a -> Target.App(a.id) }) } }
-            }
-            MenuItem(l, stringResource(R.string.dock_tap, l.labelOf(icon.tap))) {
-                pick(l.getString(R.string.dock_pick_tap)) { d, t -> d.copy(tap = t) }
-            }
-            MenuItem(l, stringResource(R.string.dock_swipe_up, l.labelOf(icon.up))) {
-                pick(l.getString(R.string.dock_pick_swipe_up)) { d, t -> d.copy(up = t) }
-            }
-            MenuItem(l, stringResource(R.string.dock_swipe_down, l.labelOf(icon.down))) {
-                pick(l.getString(R.string.dock_pick_swipe_down)) { d, t -> d.copy(down = t) }
-            }
+            MenuItem(l, stringResource(R.string.dock_configure)) { l.popup = Popup.DockSetup(page, slot) }
+            // No Desinstalar here: Info de la app has it.
             app?.let { MenuItem(l, stringResource(R.string.menu_app_info)) { l.showInfo(it) } }
-            if (app != null && icon.tap is Target.App && app.removable) MenuItem(l, stringResource(R.string.uninstall)) { l.uninstall(app) }
         }
     }
 }
@@ -1505,6 +1499,10 @@ private fun AppShortcuts(l: Launcher, app: App, shortcuts: List<AppShortcut>) {
 /** A menu entry's [label] marked on or off: a tab the app is in, the option chosen. */
 private fun ticked(on: Boolean, label: String) = "${if (on) "✓" else "○"} $label"
 
+/** [target]'s name in a summary: an app's or shortcut's own as it is ("eBay"), else "Nada" or "No instalada". */
+private fun Launcher.nameOf(target: Target?) =
+    labelOf(target).let { if (target is Target.Shortcut || appOf(target) != null) it else it.replaceFirstChar { c -> c.uppercase() } }
+
 /** A menu entry that closes the menu, then acts (the action may open another popup). */
 @Composable
 private fun MenuItem(l: Launcher, text: String, onClick: () -> Unit) = DropdownMenuItem(text = { Text(text) }, onClick = {
@@ -1513,8 +1511,8 @@ private fun MenuItem(l: Launcher, text: String, onClick: () -> Unit) = DropdownM
 })
 
 @Composable
-private fun PickerDialog(l: Launcher, title: String, query: String, onQuery: (String) -> Unit, rows: LazyListScope.() -> Unit) {
-    Dialog({ l.popup = null }) {
+private fun PickerDialog(l: Launcher, title: String, query: String, onQuery: (String) -> Unit, onDismiss: () -> Unit = { l.popup = null }, rows: LazyListScope.() -> Unit) {
+    Dialog(onDismiss) {
         Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
             Column(Modifier.padding(16.dp).heightIn(max = 560.dp)) {
                 Text(title, Modifier.padding(start = 4.dp, bottom = 8.dp), style = MaterialTheme.typography.titleMedium)
@@ -1528,7 +1526,7 @@ private fun PickerDialog(l: Launcher, title: String, query: String, onQuery: (St
 @Composable
 private fun AppPicker(l: Launcher, p: Popup.PickApp) {
     var query by remember { mutableStateOf("") }
-    PickerDialog(l, p.title, query, { query = it }) {
+    PickerDialog(l, p.title, query, { query = it }, { l.popup = p.back }) {
         fun choose(app: App?) {
             l.popup = null
             p.onPick(app)
@@ -1869,6 +1867,10 @@ private fun DrawScope.line(color: Color, vararg xy: Float) = drawPath(
     style = LINE,
 )
 
+private val BOOK: Glyph = { c -> // an open book: the guide
+    line(c, 12f, 7f, 12f, 20f)
+    line(c, 12f, 7f, 3f, 4.5f, 3f, 17.5f, 12f, 20f, 21f, 17.5f, 21f, 4.5f, 12f, 7f)
+}
 private val PHONE: Glyph = { c -> // a phone between two brackets: Nova's home screen
     drawRoundRect(c, Offset(7f, 3f), Size(10f, 18f), CornerRadius(2f), style = LINE)
     line(c, 3f, 8f, 3f, 16f)
@@ -1908,6 +1910,7 @@ private val BACK: Glyph = { c ->
 }
 private val UP: Glyph = { c -> line(c, 6f, 15f, 12f, 9f, 18f, 15f) }
 private val DOWN: Glyph = { c -> line(c, 6f, 9f, 12f, 15f, 18f, 9f) }
+private val NEXT: Glyph = { c -> line(c, 9f, 6f, 15f, 12f, 9f, 18f) }
 
 /** Nova's − and + buttons: a black sign on a disc. */
 private fun disc(plus: Boolean): Glyph = { c ->
@@ -1932,32 +1935,32 @@ private fun IconAction(glyph: Glyph, label: String, tint: Color = MUTED, enabled
 ) { GlyphIcon(glyph, LocalContentColor.current) }
 
 private enum class Section(@StringRes val title: Int, val glyph: Glyph) {
+    GUIDE(R.string.guide, BOOK),
     DESKTOP(R.string.home_screen, PHONE),
     DRAWER(R.string.settings_drawer, APPS),
     DOCK(R.string.settings_dock, DOCK_BAR),
     GESTURES(R.string.settings_gestures, TAP),
     BACKUP(R.string.settings_backup, RESTORE),
-    TIDY(R.string.tidy, TRASH), // opened from DESKTOP, not from the main list
-    UNUSED(R.string.unused, TRASH), // opened from DRAWER, not from the main list
+    TIDY(R.string.tidy, TRASH), // opened from DESKTOP or the guide, not from the main list
+    UNUSED(R.string.unused, TRASH), // opened from DRAWER or the guide, not from the main list
 }
 
 @Composable
 private fun SettingsScreen(l: Launcher) {
-    var section by remember { mutableStateOf<Section?>(null) }
-    val back = {
-        if (section == null) l.settingsOpen = false
-        else section = when (section) {
-            Section.TIDY -> Section.DESKTOP
-            Section.UNUSED -> Section.DRAWER
-            else -> null
-        }
-    }
+    // Opened by itself on a fresh install's first launch: on the guide, and back from there goes home.
+    val welcome = remember { l.welcome }
+    DisposableEffect(Unit) { onDispose { l.welcome = false } }
+    // The sections opened on the way, each with its scroll: back returns to the one before, as it was left.
+    val trail = remember { mutableStateListOf<Pair<Section, ScrollState>>().apply { if (welcome) add(Section.GUIDE to ScrollState(0)) } }
+    val open: (Section) -> Unit = { trail.add(it to ScrollState(0)) }
+    val mainScroll = remember { ScrollState(0) }
+    val back: () -> Unit = { if (trail.isEmpty() || welcome && trail.size == 1) l.settingsOpen = false else trail.removeAt(trail.lastIndex) }
     BackHandler(onBack = back)
     // Clear, over the hidden Home, so a preview strip shows the wallpaper; a Surface still takes every touch.
     Surface(Modifier.fillMaxSize(), color = Color.Transparent, contentColor = MaterialTheme.colorScheme.onSurface) {
-        val s = section
-        // Separate branches (and keys), so the main list and each section get their own scroll position.
-        if (s == null) MainList(l) { section = it } else key(s) { Column {
+        val s = trail.lastOrNull()?.first
+        // Separate branches (and keys), so the main list and each section keep their own state.
+        if (s == null) MainList(l, mainScroll, open) else key(s) { Column {
             Bar(stringResource(s.title), back)
             val layout = l.layout
             when (s) {
@@ -1971,16 +1974,17 @@ private fun SettingsScreen(l: Launcher) {
                 Section.DOCK -> PreviewIcons(l, layout.dock.firstOrNull().orEmpty().take(layout.dockSize).map { it.tap?.takeUnless(l::hides) }, layout.dockSize, ICON, labels = false, Modifier.height(120.dp))
                 else -> Unit
             }
-            Column(Modifier.weight(1f).fillMaxWidth().background(Color.Black).verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 16.dp)) {
+            Column(Modifier.weight(1f).fillMaxWidth().background(Color.Black).verticalScroll(trail.last().second).navigationBarsPadding().padding(bottom = 16.dp)) {
                 when (s) {
-                    Section.DESKTOP -> DesktopSettings(l, layout) { section = Section.TIDY }
+                    Section.GUIDE -> GuideSettings(welcome, open)
+                    Section.DESKTOP -> DesktopSettings(l, layout) { open(Section.TIDY) }
                     Section.TIDY -> TidySettings(l, layout)
-                    Section.DRAWER -> DrawerSettings(l, layout) { section = Section.UNUSED }
+                    Section.DRAWER -> DrawerSettings(l, layout) { open(Section.UNUSED) }
                     Section.UNUSED -> UnusedSettings(l, layout)
                     Section.DOCK -> DockSettings(l, layout)
                     Section.GESTURES -> {
                         Header(stringResource(R.string.home_screen), divider = false)
-                        SettingRow(stringResource(R.string.gesture_double_tap), l.labelOf(layout.doubleTap).replaceFirstChar { it.uppercase() }, {
+                        SettingRow(stringResource(R.string.gesture_double_tap), l.nameOf(layout.doubleTap), {
                             l.popup = Popup.PickApp(l.getString(R.string.gesture_pick_double_tap)) { app ->
                                 l.update { it.copy(doubleTap = app?.let { a -> Target.App(a.id) }) }
                             }
@@ -1999,19 +2003,20 @@ private fun SettingsScreen(l: Launcher) {
 
 /** Nova's first page: a big title over one row per section. No back arrow, as in Nova: system back closes it. */
 @Composable
-private fun MainList(l: Launcher, open: (Section) -> Unit) {
+private fun MainList(l: Launcher, scroll: ScrollState, open: (Section) -> Unit) {
     val layout = l.layout
-    Column(Modifier.fillMaxSize().background(Color.Black).statusBarsPadding().verticalScroll(rememberScrollState()).navigationBarsPadding()) {
+    Column(Modifier.fillMaxSize().background(Color.Black).statusBarsPadding().verticalScroll(scroll).navigationBarsPadding()) {
         Text(stringResource(R.string.settings), Modifier.padding(start = 24.dp, top = 88.dp, bottom = 32.dp), fontSize = 32.sp, fontFamily = TITLE_FONT)
         for (s in Section.entries) {
             val summary = when (s) {
+                Section.GUIDE -> stringResource(R.string.guide_summary)
                 Section.DESKTOP -> stringResource(R.string.settings_grid_summary, layout.columns, layout.rows) + " · " +
                     pluralStringResource(R.plurals.count_pages, layout.desktop.size, layout.desktop.size)
                 Section.DRAWER -> stringResource(R.string.settings_grid_summary, layout.drawerColumns, layout.drawerRows) + " · " +
                     layout.tabs.joinToString(" · ") { it.name }
                 Section.DOCK -> pluralStringResource(R.plurals.count_icons, layout.dockSize, layout.dockSize) + " · " +
                     pluralStringResource(R.plurals.count_pages, layout.dock.size, layout.dock.size)
-                Section.GESTURES -> stringResource(R.string.settings_gestures_summary, l.labelOf(layout.doubleTap).replaceFirstChar { it.uppercase() }) +
+                Section.GESTURES -> stringResource(R.string.settings_gestures_summary, l.nameOf(layout.doubleTap)) +
                     " · " + stringResource(if (layout.haptics) R.string.haptics else R.string.haptics_off)
                 Section.BACKUP -> l.backupFolder?.let { stringResource(R.string.settings_backup_summary_weekly, folderName(l, it)) }
                     ?: stringResource(R.string.settings_backup_summary)
@@ -2064,6 +2069,108 @@ private fun DrawerPreview(l: Launcher, layout: Layout) = Column(Modifier.fillMax
     }
     val apps = layout.tabs.firstOrNull()?.let { tabApps(it, layout.tabs, l.tabbed, l.find, layout.hidden) } ?: l.tabbed
     PreviewIcons(l, apps.take(layout.drawerColumns).map { Target.App(it.id) }, layout.drawerColumns, DRAWER_ICON, labels = true, Modifier.height(128.dp).padding(horizontal = 8.dp))
+}
+
+/**
+ * A guide entry: its [title] and [how] to do it, a string, or with [args] a plurals counted by the first of them; [opens]
+ * is its section of Ajustes, if it has one.
+ */
+private class Tip(@StringRes val title: Int, val how: Int, val opens: Section? = null, vararg val args: Int)
+
+/**
+ * Ajustes → Guía: what the app does, part by part, so it is not found only by chance. It tells what the code does, so
+ * a new or changed feature changes its entry. One with a section of Ajustes opens it, as the main list does.
+ * [welcome]: it opened by itself, so its first line says where to find it again.
+ */
+@Composable
+private fun GuideSettings(welcome: Boolean, open: (Section) -> Unit) {
+    val guide = listOf(
+        R.string.home_screen to listOf(
+            Tip(R.string.guide_move, R.string.guide_move_how),
+            Tip(R.string.guide_throw, R.string.guide_throw_how),
+            Tip(R.string.guide_shortcuts, R.string.guide_shortcuts_how),
+            Tip(R.string.guide_rename, R.string.guide_rename_how),
+            Tip(R.string.desktop_move_to_page, R.string.guide_move_page_how),
+            Tip(R.string.uninstall, R.string.guide_uninstall_how),
+            Tip(R.string.guide_home_menu, R.string.guide_home_menu_how),
+            Tip(R.string.settings_pages, R.string.guide_pages_how, Section.DESKTOP),
+            Tip(R.string.desktop_grid, R.string.guide_grid_how, Section.DESKTOP),
+            Tip(R.string.tidy, R.string.guide_tidy_how, Section.TIDY),
+            Tip(R.string.paused_apps, R.string.guide_paused_how, Section.DESKTOP),
+            Tip(R.string.guide_pin, R.string.guide_pin_how),
+        ),
+        R.string.guide_widgets to listOf(
+            Tip(R.string.widget_add, R.string.guide_widget_add_how),
+            Tip(R.string.widget_resize, R.string.guide_resize_how),
+            Tip(R.string.widget_reconfigure, R.string.guide_reconfigure_how),
+            Tip(R.string.guide_placeholder, R.string.guide_placeholder_how),
+        ),
+        R.string.settings_dock to listOf(
+            Tip(R.string.guide_dock_setup, R.string.guide_dock_setup_how),
+            Tip(R.string.guide_dock_drop, R.string.guide_dock_drop_how),
+            Tip(R.string.guide_dock_pages, R.string.guide_dock_pages_how, Section.DOCK),
+        ),
+        R.string.settings_drawer to listOf(
+            Tip(R.string.guide_drawer, R.string.guide_drawer_how),
+            Tip(R.string.drawer_grid, R.string.guide_drawer_grid_how, Section.DRAWER),
+            Tip(R.string.settings_tabs, R.string.guide_tabs_how, Section.DRAWER),
+            Tip(R.string.guide_tab_apps, R.string.guide_tab_apps_how, Section.DRAWER),
+            Tip(R.string.guide_hide, R.string.guide_hide_how, Section.DRAWER),
+            Tip(R.string.add_to_home_screen, R.string.guide_add_home_how),
+            Tip(R.string.guide_scroller, R.string.guide_scroller_how),
+            Tip(R.string.unused, R.plurals.guide_unused_how, Section.UNUSED, UNUSED_DAYS),
+        ),
+        R.string.settings_search to listOf(
+            Tip(R.string.guide_search_open, R.string.guide_search_open_how),
+            Tip(R.string.guide_ranking, R.string.guide_ranking_how),
+            Tip(R.string.guide_calc, R.string.guide_calc_how),
+            Tip(R.string.search_numbers, R.string.guide_numbers_how, Section.DRAWER),
+            Tip(R.string.guide_convert, R.string.guide_convert_how),
+            Tip(R.string.guide_actions, R.string.guide_actions_how),
+            Tip(R.string.search_with, R.string.guide_search_with_how),
+            Tip(R.string.guide_bar, R.string.guide_bar_how),
+        ),
+        R.string.poisons to listOf(
+            Tip(R.string.poison_mark, R.string.guide_poison_how, Section.DRAWER),
+            Tip(R.string.guide_pause, R.plurals.guide_pause_how, null, PAUSE_SECONDS, PAUSE_STEP_SECONDS),
+            Tip(R.string.poison_instead, R.string.guide_instead_how, Section.DRAWER),
+            Tip(R.string.guide_poison_where, R.string.guide_poison_where_how),
+        ),
+        R.string.guide_gestures to listOf(
+            Tip(R.string.guide_swipe_up, R.string.guide_swipe_up_how),
+            Tip(R.string.guide_swipe_down, R.string.guide_swipe_down_how),
+            Tip(R.string.gesture_double_tap, R.string.guide_double_tap_how, Section.GESTURES),
+            Tip(R.string.guide_home, R.string.guide_home_how),
+            Tip(R.string.haptics, R.string.guide_haptics_how, Section.GESTURES),
+        ),
+        R.string.guide_settings to listOf(
+            Tip(R.string.guide_open_settings, R.string.guide_open_settings_how),
+            Tip(R.string.settings_home_app, R.string.guide_home_app_how),
+            Tip(R.string.guide_backup, R.string.guide_backup_how, Section.BACKUP),
+            Tip(R.string.backup_weekly, R.string.guide_weekly_how, Section.BACKUP),
+            Tip(R.string.backup_import_nova, R.string.guide_nova_how, Section.BACKUP),
+            Tip(R.string.guide_offline, R.string.guide_offline_how),
+        ),
+    )
+    if (welcome) {
+        Text(
+            stringResource(R.string.guide_welcome),
+            Modifier.padding(start = 24.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 14.sp,
+            lineHeight = 17.sp,
+        )
+    }
+    guide.forEachIndexed { i, (group, tips) ->
+        Header(stringResource(group), divider = i > 0)
+        for (t in tips) {
+            // Only a line with numbers is formatted: the calculator's has a bare %.
+            val how = if (t.args.isEmpty()) stringResource(t.how) else pluralStringResource(t.how, t.args[0], *t.args.toTypedArray())
+            SettingRow(stringResource(t.title), how, t.opens?.let { s -> { open(s) } }) {
+                if (t.opens != null) GlyphIcon(NEXT, MUTED, Modifier.padding(12.dp))
+            }
+        }
+    }
 }
 
 @Composable
@@ -2256,7 +2363,7 @@ private fun DrawerSettings(l: Launcher, layout: Layout, onUnused: () -> Unit) {
     )
     SettingRow(
         stringResource(R.string.poison_instead),
-        layout.instead?.let { l.labelOf(it).replaceFirstChar { c -> c.uppercase() } } ?: stringResource(R.string.poison_instead_none),
+        layout.instead?.let { l.nameOf(it) } ?: stringResource(R.string.poison_instead_none),
         {
             l.popup = Popup.PickApp(l.getString(R.string.poison_pick_instead)) { app ->
                 l.update { it.copy(instead = app?.let { a -> Target.App(a.id) }) }
@@ -2368,6 +2475,48 @@ private fun TabDialog(l: Launcher, i: Int, tab: Tab) {
     )
 }
 
+/** A dock slot's tap and swipes. A row opens the app picker, which comes back here, so several can be set in a row. */
+@Composable
+private fun DockDialog(l: Launcher, p: Popup.DockSetup, icon: DockIcon) {
+    // [none]: what the gesture does without a target of its own. The picker is titled [label] too.
+    @Composable
+    fun TargetRow(@StringRes label: Int, target: Target?, none: String, set: (DockIcon, Target?) -> DockIcon) = Row(
+        Modifier
+            .padding(top = 8.dp)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable {
+                l.popup = Popup.PickApp(l.getString(label), back = p) { app ->
+                    l.updateDock(p.page, p.slot) { set(it, app?.let { a -> Target.App(a.id) }) }
+                    l.popup = p
+                }
+            }
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(stringResource(label), fontSize = 16.sp)
+            Text(if (target == null) none else l.nameOf(target), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        // The row already reads the app's name.
+        Box(Modifier.size(36.dp).clearAndSetSemantics {}) { target?.let { TargetIcon(l, it, 36.dp) } }
+    }
+    AlertDialog(
+        onDismissRequest = { l.popup = null },
+        // A pinned shortcut by its own name, not its app's ("Booking", not Chrome).
+        title = { DialogTitle((icon.tap as? Target.Shortcut)?.let(l::labelOf) ?: l.appOf(icon.tap)?.label ?: stringResource(R.string.dock_icon)) },
+        text = {
+            Column {
+                TargetRow(R.string.dock_pick_tap, icon.tap, l.nameOf(null)) { d, t -> d.copy(tap = t) }
+                // Without its own, a swipe does what it does elsewhere on the home screen (DockSlot).
+                TargetRow(R.string.dock_pick_swipe_up, icon.up, stringResource(R.string.settings_drawer)) { d, t -> d.copy(up = t) }
+                TargetRow(R.string.dock_pick_swipe_down, icon.down, stringResource(R.string.notifications)) { d, t -> d.copy(down = t) }
+            }
+        },
+        confirmButton = { TextButton({ l.popup = null }) { Text(stringResource(R.string.done)) } },
+    )
+}
+
 @Composable
 private fun DockSettings(l: Launcher, layout: Layout) {
     Header(stringResource(R.string.settings_layout), divider = false)
@@ -2452,7 +2601,8 @@ private fun SettingRow(title: String, summary: String? = null, onClick: (() -> U
     Row(
         Modifier
             .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            // Without a click, title and summary still read as one item; its buttons keep their own focus.
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier.semantics(mergeDescendants = true) {})
             .heightIn(min = 72.dp)
             .padding(start = if (icon != null) 34.dp else 24.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -2487,7 +2637,7 @@ private fun Header(text: String, divider: Boolean = true) {
     if (divider) Box(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp), contentAlignment = Alignment.Center) {
         Box(Modifier.size(128.dp, 3.dp).background(DIVIDER, CircleShape))
     }
-    Text(text, Modifier.padding(start = 24.dp, top = 16.dp, bottom = 4.dp), color = MUTED, fontSize = 14.sp, fontFamily = HEADER_FONT)
+    Text(text, Modifier.semantics { heading() }.padding(start = 24.dp, top = 16.dp, bottom = 4.dp), color = MUTED, fontSize = 14.sp, fontFamily = HEADER_FONT)
 }
 
 /** Nova's − n + or, [vertical], + n −, within GRID_SIZES; SpaceBetween spreads it over a wider [modifier]. */

@@ -49,7 +49,7 @@
     <string name="open_target_link">el enlace</string>
     <string name="open_target_email">el correo</string>
 
-    <!-- What an icon or gesture opens, in "Tocar: nada" and "Doble toque: Nada" -->
+    <!-- What an icon or gesture opens, in "Doble toque: Nada" and under a dock icon's "Al tocar" -->
     <string name="target_none">nada</string>
     <string name="target_not_installed">no instalada</string>
     <string name="app_unavailable">La app no está instalada o está desactivada</string>
@@ -86,9 +86,11 @@
     <string name="dock_slot_taken">Ese lugar del dock está ocupado</string>
     <string name="dock_slot_paused">Ese lugar del dock es de %1$s, que está pausada</string>
     <string name="paused_placed">%1$s está pausada: aparece cuando se reanude</string>
-    <string name="dock_tap">Tocar: %1$s</string>
-    <string name="dock_swipe_up">Deslizar ↑: %1$s</string>
-    <string name="dock_swipe_down">Deslizar ↓: %1$s</string>
+    <string name="dock_configure">Configurar</string>
+    <!-- The title of an empty dock slot's Configurar dialog -->
+    <string name="dock_icon">Ícono del dock</string>
+    <!-- What a dock icon's swipe down opens without an app of its own -->
+    <string name="notifications">Notificaciones</string>
     <string name="dock_pick_tap">Al tocar</string>
     <string name="dock_pick_swipe_up">Al deslizar hacia arriba</string>
     <string name="dock_pick_swipe_down">Al deslizar hacia abajo</string>
@@ -283,4 +285,98 @@
     <string name="pin_no_room">No hay lugar en el escritorio</string>
     <string name="pin_add_failed">No se pudo agregar «%1$s»</string>
     <string name="pin_added">Agregado al escritorio</string>
+
+    <!-- Settings → Guide: what the app does, part by part. Each entry is a name and one line on how to do it. -->
+    <string name="guide">Guía</string>
+    <string name="guide_summary">Todo lo que podés hacer, por partes</string>
+    <string name="guide_welcome">Esto es lo que podés hacer con Launcher, por partes. Para volver a leerlo: mantené presionado un lugar vacío del escritorio → Ajustes → Guía.</string>
+    <string name="guide_widgets">Widgets</string>
+    <string name="guide_gestures">Gestos y vibración</string>
+    <string name="guide_settings">Ajustes y copias de seguridad</string>
+    <string name="guide_move">Mover un elemento</string>
+    <string name="guide_move_how">Mantené presionado un ícono o widget y arrastralo; sostenelo en un costado de la pantalla para cambiar de página</string>
+    <string name="guide_throw">Quitar un elemento</string>
+    <string name="guide_throw_how">Mantenelo presionado → Quitar. O tiralo: arrastralo y soltalo con un movimiento rápido; Deshacer lo trae de vuelta</string>
+    <string name="guide_shortcuts">Los atajos de una app</string>
+    <string name="guide_shortcuts_how">Mantené presionada una app en el escritorio, el dock o el cajón: arriba están sus atajos, y con + dejás uno en el escritorio</string>
+    <string name="guide_rename">Renombrar un ícono</string>
+    <string name="guide_rename_how">Mantenelo presionado → Renombrar; el cajón y la búsqueda conservan el nombre de la app</string>
+    <string name="guide_move_page_how">Con más de una página, mantené presionado un elemento → Mover a otra página; conserva su lugar si allá está libre</string>
+    <string name="guide_uninstall_how">Mantené presionada una app en el escritorio o el cajón → Desinstalar; Android pide confirmar, y sus íconos se van con ella. Si la desinstalás de otra forma (Info de la app, como desde el dock), sus íconos quedan para Ordenar</string>
+    <string name="guide_home_menu">Menú del escritorio</string>
+    <string name="guide_home_menu_how">Mantené presionado un lugar vacío: Agregar widget, Fondo de pantalla o Ajustes</string>
+    <string name="guide_pages_how">En Ajustes → Escritorio agregá, ordená y quitá páginas, y elegí la principal; lo de una página que quitás pasa a las otras</string>
+    <string name="guide_grid_how">En Ajustes → Escritorio; achicarla no borra nada: mueve lo que ya no entra</string>
+    <string name="guide_tidy_how">Lista lo roto, lo repetido y las páginas vacías, cada uno con su Quitar; nada se quita solo</string>
+    <string name="guide_paused_how">Las que pausa el modo Concentración o Bienestar digital quedan en gris; Ajustes → Escritorio puede ocultarlas</string>
+    <string name="guide_pin">Atajos de otras apps</string>
+    <string name="guide_pin_how">Cuando una app, como el navegador, agrega un atajo al escritorio, Launcher te pregunta antes</string>
+    <string name="guide_widget_add_how">Mantené presionado un lugar vacío → Agregar widget; buscalo por app o por nombre, con su vista previa y su tamaño</string>
+    <string name="guide_resize_how">Mantené presionado un widget → Cambiar tamaño y arrastrá los puntos de sus bordes; tocá afuera para terminar</string>
+    <string name="guide_reconfigure_how">Mantené presionado un widget → Volver a configurar, y después tocalo: se abre de nuevo su configuración, salvo que no tenga o sea opcional</string>
+    <string name="guide_placeholder">Widgets por configurar</string>
+    <string name="guide_placeholder_how">Después de importar de Nova, o de restaurar una copia cuyos widgets ya no están, tocá cada widget con + para configurarlo</string>
+    <string name="guide_dock_setup">Tocar y deslizar</string>
+    <string name="guide_dock_setup_how">Mantené presionado un ícono del dock → Configurar: qué abre al tocarlo y al deslizarlo hacia arriba o hacia abajo</string>
+    <string name="guide_dock_drop">Agregar al dock</string>
+    <string name="guide_dock_drop_how">Arrastrá una app del cajón o del escritorio a un lugar vacío del dock</string>
+    <string name="guide_dock_pages">Páginas del dock</string>
+    <string name="guide_dock_pages_how">En Ajustes → Dock agregá, ordená y quitá páginas, y elegí los íconos por página; deslizá el dock de costado para pasar de una a otra, y con Desplazamiento infinito de la última se pasa a la primera</string>
+    <string name="guide_drawer">Abrir y cerrar</string>
+    <string name="guide_drawer_how">Deslizá hacia arriba en el escritorio; para cerrarlo, deslizá hacia abajo desde el principio de la lista</string>
+    <string name="guide_drawer_grid_how">Sus columnas, y cuántas filas entran en una pantalla, en Ajustes → Cajón de apps</string>
+    <string name="guide_tabs_how">Deslizá de costado para pasar de una a otra; mantené presionada una para renombrarla, agregar otra o, si es de apps elegidas, eliminarla</string>
+    <string name="guide_tab_apps">Las apps de una pestaña</string>
+    <string name="guide_tab_apps_how">Ajustes → Cajón de apps → la pestaña → Elegir apps, o tildá sus pestañas en el menú de una app; una pestaña nueva saca sus apps de las pestañas de todas (como Apps), salvo que ahí apagues «Sacar sus apps de las pestañas de todas»</string>
+    <string name="guide_hide">Ocultar una app</string>
+    <string name="guide_hide_how">Mantenela presionada → Ocultar del cajón; la búsqueda la sigue encontrando</string>
+    <string name="guide_add_home_how">Mantené presionada una app → Agregar al escritorio, o arrastrala al escritorio o al dock</string>
+    <string name="guide_scroller">Recorrer rápido</string>
+    <string name="guide_scroller_how">Arrastrá la barra del borde derecho de la lista</string>
+    <plurals name="guide_unused_how">
+        <item quantity="one">Las apps que no abriste desde Launcher en %1$d día, cada una con Desinstalar; la lista aparece cuando Launcher lleva ese tiempo contando aperturas</item>
+        <item quantity="many">Las apps que no abriste desde Launcher en %1$d días, cada una con Desinstalar; la lista aparece cuando Launcher lleva ese tiempo contando aperturas</item>
+        <item quantity="other">Las apps que no abriste desde Launcher en %1$d días, cada una con Desinstalar; la lista aparece cuando Launcher lleva ese tiempo contando aperturas</item>
+    </plurals>
+    <string name="guide_search_open">Abrir la búsqueda</string>
+    <string name="guide_search_open_how">Tocá la barra de abajo, o apretá Inicio en la página principal; Ir en el teclado abre el primer resultado</string>
+    <string name="guide_ranking">Tus apps primero</string>
+    <string name="guide_ranking_how">Entre resultados igual de buenos, primero las apps que más abrís; las tildes no importan</string>
+    <string name="guide_calc">Calculadora</string>
+    <string name="guide_calc_how" formatted="false">Escribí una cuenta, como 125*3 o 1500 + 21%; tocá el resultado para copiarlo</string>
+    <string name="guide_numbers_how">Lee y muestra los números como se escriben en tu país; Ajustes → Cajón de apps puede fijar el formato</string>
+    <string name="guide_convert">Conversión de unidades</string>
+    <string name="guide_convert_how">Escribí 5 km a mi, 350 f o 2 tazas en ml; tocá el resultado para copiarlo</string>
+    <string name="guide_actions">Teléfonos, enlaces y correos</string>
+    <string name="guide_actions_how">Un teléfono ofrece Llamar, Enviar SMS y, si está instalado, WhatsApp; un enlace, Abrir, si ninguna app coincide; un correo, Escribir</string>
+    <string name="guide_search_with_how">Le pasa lo que escribiste a Google, DuckDuckGo, Play Store, Spotify o Firefox Focus</string>
+    <string name="guide_bar">La barra de búsqueda</string>
+    <string name="guide_bar_how">Sus botones abren el asistente y Google Lens, y la fecha abre el calendario</string>
+    <string name="guide_poison_how">Mantené presionada una app en el cajón → Marcar como veneno, o tildalas en Ajustes → Cajón de apps → Venenos</string>
+    <string name="guide_pause">Una pausa que crece</string>
+    <plurals name="guide_pause_how">
+        <item quantity="one">Un veneno abre después de %1$d segundo, más %2$d por cada vez que ya lo abriste hoy</item>
+        <item quantity="many">Un veneno abre después de %1$d segundos, más %2$d por cada vez que ya lo abriste hoy</item>
+        <item quantity="other">Un veneno abre después de %1$d segundos, más %2$d por cada vez que ya lo abriste hoy</item>
+    </plurals>
+    <string name="guide_instead_how">Elegí una app sana en Ajustes → Cajón de apps: la pausa te la ofrece, sin esperar</string>
+    <string name="guide_poison_where">Dónde frena</string>
+    <string name="guide_poison_where_how">En todo lo que abre Launcher: íconos, dock, gestos, atajos y búsqueda; no en las notificaciones ni en Recientes</string>
+    <string name="guide_swipe_up">Deslizar hacia arriba</string>
+    <string name="guide_swipe_up_how">En cualquier parte del escritorio, salvo en un ícono del dock con su propio deslizamiento, abre el cajón de apps</string>
+    <string name="guide_swipe_down">Deslizar hacia abajo</string>
+    <string name="guide_swipe_down_how">En cualquier parte del escritorio, salvo en un ícono del dock con su propio deslizamiento, abre las notificaciones</string>
+    <string name="guide_double_tap_how">Tocá dos veces un lugar vacío para abrir la app que elijas en Ajustes → Gestos</string>
+    <string name="guide_home">Botón de inicio</string>
+    <string name="guide_home_how">Cierra lo que esté abierto: un menú, el cajón o Ajustes. Sin nada abierto en el escritorio, vuelve a la página principal, y en la principal abre la búsqueda</string>
+    <string name="guide_haptics_how">Una vibración suave al mantener presionado, soltar, tirar y deslizar; la podés apagar en Ajustes → Gestos</string>
+    <string name="guide_open_settings">Abrir Ajustes</string>
+    <string name="guide_open_settings_how">Mantené presionado un lugar vacío del escritorio → Ajustes</string>
+    <string name="guide_home_app_how">Ajustes → App de inicio: elegí Launcher para que el botón de inicio lo abra; solo así andan los atajos de una app y los de otras apps</string>
+    <string name="guide_backup">Copia manual</string>
+    <string name="guide_backup_how">Guardá el escritorio, el dock, las pestañas y los ajustes en un archivo y restauralos después; tras reinstalar, los atajos del escritorio se vuelven a agregar desde su app</string>
+    <string name="guide_weekly_how">Una copia nueva por semana en la carpeta que elijas; las viejas quedan</string>
+    <string name="guide_nova_how">Trae el escritorio, el dock, las pestañas, las apps ocultas y las grillas de un archivo .novabackup</string>
+    <string name="guide_offline">Sin internet</string>
+    <string name="guide_offline_how">Launcher no tiene permiso de red, así que no puede enviar nada; las copias se guardan en el teléfono</string>
 </resources>
