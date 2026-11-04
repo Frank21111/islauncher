@@ -35,11 +35,13 @@ picker must see non-exported widget receivers, which a `<queries>` block misses)
 
 - `Model.kt`: pure logic. `Layout` holds dock pages (`DockIcon`s: tap/up/down targets), desktop pages of `Item`s
   (icons and widgets on half cells), drawer tabs, hidden apps, the double-tap target and the settings: desktop and
-  drawer grids, dock icons per page, dock wrap-around, haptics, the app the poison pause offers `instead`, the number
+  drawer grids, dock icons per page, dock wrap-around, the main dock page (`defaultDockPage`: the dock goes back to it
+  whenever the home screen is left, `dockResets` in `onStop`), haptics, the app the poison pause offers `instead`, the number
   format (`decimal`; null follows the phone's country), `hideSuspended` (Apps pausadas: Atenuar / Ocultar). Every dock page keeps at least `dockSize` icons; those past
   it stay saved, hidden. Shrinking the grid (`withGrid`) or removing a page (`withoutPage`) moves what no longer fits
   to the nearest free spot, else another page, else a new one: nothing is dropped. `withPageMoved` reorders desktop
-  pages and keeps `defaultPage` on the main one (`shifted` reorders any list: dock pages, tabs); the item menu's
+  pages and keeps `defaultPage` on the main one, as `withDockPageMoved` and `withoutDockPage` keep `defaultDockPage`
+  (`shifted` reorders any list, tabs too); the item menu's
   "Mover a otra página" is `moved` with the item's own cell. A widget's resize frame drags one `Edge` with `stretched`
   (half cells, within the provider's `Limits`, the page and the items beside it; a limit already broken only stops it
   getting worse) and commits with `resized` (refused off the page or on a new overlap: one it had already stays). `placed` puts a thrown item back. `audit` is Ajustes → Ordenar: broken icons, dock targets

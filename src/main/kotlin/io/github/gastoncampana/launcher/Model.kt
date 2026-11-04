@@ -57,6 +57,8 @@ data class Layout(
     val dock: List<List<DockIcon>> = listOf(List(5) { DockIcon() }),
     val desktop: List<List<Item>> = listOf(emptyList()),
     val defaultPage: Int = 0,
+    /** The dock page shown at start, and again whenever the home screen is left (such as for an app it opened). */
+    val defaultDockPage: Int = 0,
     val tabs: List<Tab> = listOf(Tab("Apps")),
     val doubleTap: Target? = null,
     /** Left out of every drawer tab; search still finds them, as in Nova. */
@@ -191,6 +193,17 @@ fun Layout.withoutApp(pkg: String, user: Long, mainUser: Long): Layout {
 /** Moves desktop page [from] to [to]; the main page stays the main one wherever it lands. */
 fun Layout.withPageMoved(from: Int, to: Int): Layout =
     copy(desktop = desktop.shifted(from, to), defaultPage = desktop.indices.toList().shifted(from, to).indexOf(defaultPage))
+
+/** Moves dock page [from] to [to]; the main dock page stays the main one wherever it lands. */
+fun Layout.withDockPageMoved(from: Int, to: Int): Layout =
+    copy(dock = dock.shifted(from, to), defaultDockPage = dock.indices.toList().shifted(from, to).indexOf(defaultDockPage))
+
+/** Removes dock [page] and its icons; the last page stays. */
+fun Layout.withoutDockPage(page: Int): Layout {
+    if (page !in dock.indices || dock.size == 1) return this
+    val main = if (defaultDockPage > page) defaultDockPage - 1 else if (defaultDockPage == page) 0 else defaultDockPage
+    return copy(dock = dock.filterIndexed { i, _ -> i != page }, defaultDockPage = main)
+}
 
 /** Where something sits: [item] on desktop [page], or dock [page]'s [slot], whose tap (or [swipe]) opens [target]. */
 sealed interface Place {
@@ -339,7 +352,13 @@ fun Layout.restored(live: Map<Int, String?>): Layout {
         page.filter { fits(it.cell) }
             .map { if (it is Item.Widget && live[it.widgetId] != it.provider) it.copy(widgetId = 0) else it }
     }
-    return copy(dock = dock.take(MAX_PAGES), desktop = pages, defaultPage = defaultPage.takeIf { it in pages.indices } ?: 0)
+    val docks = dock.take(MAX_PAGES)
+    return copy(
+        dock = docks,
+        desktop = pages,
+        defaultPage = defaultPage.takeIf { it in pages.indices } ?: 0,
+        defaultDockPage = defaultDockPage.takeIf { it in docks.indices } ?: 0,
+    )
 }
 
 private fun Layout.withinBudget(): Boolean {
@@ -386,6 +405,7 @@ fun Layout.toJson(): String = JSONObject()
     .put("dock", JSONArray(dock.map { page -> JSONArray(page.map { it.toJson() }) }))
     .put("desktop", JSONArray(desktop.map { page -> JSONArray(page.map { it.toJson() }) }))
     .put("defaultPage", defaultPage)
+    .put("defaultDockPage", defaultDockPage)
     .put("tabs", JSONArray(tabs.map { tab -> JSONObject().put("name", tab.name).put("hide", tab.hideApps).put("apps", tab.apps?.let { JSONArray(it.toList()) }) }))
     .put("doubleTap", doubleTap?.toJson()) // null removes the key
     .put("hidden", JSONArray(hidden.toList()))
@@ -415,12 +435,14 @@ fun parseLayout(json: String): Layout {
         Tab(it.getString("name"), it.optJSONArray("apps")?.strings()?.toSet(), it.optBoolean("hide"))
     }
     val defaultPage = root.optInt("defaultPage").takeIf { it in desktop.indices } ?: 0
+    val defaultDockPage = root.optInt("defaultDockPage").takeIf { it in dock.indices } ?: 0
     val hidden = root.optJSONArray("hidden")?.strings()?.toSet().orEmpty()
     val poisons = root.optJSONArray("poisons")?.strings()?.toSet().orEmpty()
     return Layout(
         dock = dock,
         desktop = desktop,
         defaultPage = defaultPage,
+        defaultDockPage = defaultDockPage,
         tabs = tabs,
         doubleTap = root.target("doubleTap"),
         hidden = hidden,

@@ -310,7 +310,7 @@
     <string name="guide_dock_drop">Add to the dock</string>
     <string name="guide_dock_drop_how">Drag an app from the drawer or the home screen onto an empty spot in the dock</string>
     <string name="guide_dock_pages">Dock pages</string>
-    <string name="guide_dock_pages_how">Add, reorder and remove dock pages and set the icons per page in Settings → Dock; swipe the dock sideways between pages, and with Infinite scroll the last leads to the first</string>
+    <string name="guide_dock_pages_how">Add, reorder and remove dock pages and set the icons per page in Settings → Dock; swipe the dock sideways between pages, and with Infinite scroll the last leads to the first. The house marks the main page: the dock starts there and goes back to it after you open an app</string>
     <string name="guide_drawer">Open and close</string>
     <string name="guide_drawer_how">Swipe up on the home screen; to close it, pull down from the top of the list</string>
     <string name="guide_drawer_grid_how">Its columns, and how many rows fit on one screen, in Settings → App drawer</string>

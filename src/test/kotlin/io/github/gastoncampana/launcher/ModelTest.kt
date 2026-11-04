@@ -107,6 +107,7 @@ class ModelTest {
                 emptyList(),
             ),
             defaultPage = 1,
+            defaultDockPage = 1,
             tabs = listOf(Tab("A", setOf("a/a.A#0"), hideApps = true), Tab("Apps")),
             doubleTap = Shortcut("rec", "quick_record", "Grabar"),
             hidden = setOf("i/i.I#0"),
@@ -468,6 +469,29 @@ class ModelTest {
         assertEquals(listOf(a, b, c) to 1, moved(0, 0))
         assertEquals(layout, layout.withPageMoved(0, 3)) // off the end: nothing changes
         assertEquals(listOf("x", "z", "y"), listOf("x", "y", "z").shifted(2, 1)) // dock pages and tabs move the same way
+    }
+
+    @Test
+    fun theMainDockPageStaysWithItsPage() {
+        val a = List(5) { DockIcon(App("a/a.A#0")) }
+        val b = List(5) { DockIcon() }
+        val c = List(5) { DockIcon(App("c/c.C#0")) }
+        val layout = Layout(dock = listOf(a, b, c), defaultDockPage = 1)
+        fun moved(from: Int, to: Int) = layout.withDockPageMoved(from, to).let { it.dock to it.defaultDockPage }
+        assertEquals(listOf(b, a, c) to 0, moved(1, 0)) // the main page itself
+        assertEquals(listOf(b, c, a) to 0, moved(0, 2)) // a page across it
+        assertEquals(listOf(a, c, b) to 2, moved(2, 1))
+        assertEquals(layout, layout.withDockPageMoved(0, 3)) // off the end: nothing changes
+        fun removed(page: Int) = layout.withoutDockPage(page).let { it.dock to it.defaultDockPage }
+        assertEquals(listOf(b, c) to 0, removed(0)) // still the same page
+        assertEquals(listOf(a, c) to 0, removed(1)) // the main page itself: the first one takes over
+        assertEquals(listOf(a, b) to 1, removed(2))
+        val single = Layout(dock = listOf(a))
+        assertEquals(single, single.withoutDockPage(0)) // the last page stays
+        // Saved before the setting, or naming a page that is not there: the first page, where the dock used to start.
+        assertEquals(0, parseLayout("""{"dock":[[]],"desktop":[[]],"tabs":[]}""").defaultDockPage)
+        assertEquals(0, parseLayout(layout.copy(defaultDockPage = 3).toJson()).defaultDockPage)
+        assertEquals(0, Layout(dock = List(30) { b }, defaultDockPage = 25).restored(emptyMap()).defaultDockPage)
     }
 
     @Test

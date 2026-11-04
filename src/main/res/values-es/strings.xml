@@ -321,7 +321,7 @@
     <string name="guide_dock_drop">Agregar al dock</string>
     <string name="guide_dock_drop_how">Arrastrá una app del cajón o del escritorio a un lugar vacío del dock</string>
     <string name="guide_dock_pages">Páginas del dock</string>
-    <string name="guide_dock_pages_how">En Ajustes → Dock agregá, ordená y quitá páginas, y elegí los íconos por página; deslizá el dock de costado para pasar de una a otra, y con Desplazamiento infinito de la última se pasa a la primera</string>
+    <string name="guide_dock_pages_how">En Ajustes → Dock agregá, ordená y quitá páginas, y elegí los íconos por página; deslizá el dock de costado para pasar de una a otra, y con Desplazamiento infinito de la última se pasa a la primera. La casita marca la principal: el dock arranca ahí y vuelve a ella después de abrir una app</string>
     <string name="guide_drawer">Abrir y cerrar</string>
     <string name="guide_drawer_how">Deslizá hacia arriba en el escritorio; para cerrarlo, deslizá hacia abajo desde el principio de la lista</string>
     <string name="guide_drawer_grid_how">Sus columnas, y cuántas filas entran en una pantalla, en Ajustes → Cajón de apps</string>

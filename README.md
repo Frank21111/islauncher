@@ -148,6 +148,8 @@ A launcher sees every app you have and every app you open, so this one is built 
 <summary><strong>Dock</strong></summary>
 
 - Several dock pages, which wrap around from the last page to the first (you can turn that off).
+- One dock page is the main one, marked with a house in Settings → Dock. The dock starts on it and goes back to it
+  whenever you leave the home screen, such as after opening an app.
 - Each icon opens one app on tap and can open other apps on a swipe up or down. Long-press a slot for its menu: the
   app's shortcuts, Configure and app info (a slot with no app goes straight to Configure). Configure shows what the tap
   and each swipe open, and its app picker brings you back to it, so all three can be set in one go. An icon without its own swipe actions opens the drawer or
@@ -228,8 +230,8 @@ A launcher sees every app you have and every app you open, so this one is built 
   another page, or to a new page, and the grid dialog says how many will move before you apply it. Fewer dock icons
   per page hide the ones past the new size, kept until the dock grows again.
 - Desktop pages can be added, removed (their items move to other pages), reordered and set as the main page, which
-  stays the main one wherever it moves. Dock pages can be added, reordered and removed; removing one deletes its icons,
-  after asking. The desktop and the dock take up to 20 pages each.
+  stays the main one wherever it moves. Dock pages can be added, reordered, removed and set as the main page the same
+  way; removing one deletes its icons, after asking. The desktop and the dock take up to 20 pages each.
 - Settings → Home screen → Tidy up lists what needs a look, and its row counts the broken items and empty pages
   (duplicates may be on purpose, so they are listed but not counted):
   - icons, dock taps and swipes whose app is uninstalled, shortcuts whose app is gone, and widgets whose app is gone

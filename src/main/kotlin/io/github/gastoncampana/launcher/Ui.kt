@@ -862,7 +862,11 @@ private fun PageLine(pager: PagerState) {
 private fun Dock(l: Launcher, mover: Mover) {
     val pages = l.layout.dock.size
     val loops = if (l.layout.dockWraps) DOCK_LOOPS else 1
-    val pager = key(pages, loops) { rememberPagerState(initialPage = if (loops == 1) 0 else pages * loops / 2) { pages * loops } }
+    val main = l.layout.defaultDockPage
+    // A new pager on each reset: the dock is on its main page again before it shows.
+    val pager = key(pages, loops, main, l.dockResets) {
+        rememberPagerState(initialPage = if (loops == 1) main else pages * loops / 2 + main) { pages * loops }
+    }
     SideEffect { mover.dockPage = { pager.currentPage % pages } }
     BoxWithConstraints(Modifier.fillMaxWidth().height(DOCK_HEIGHT).onGloballyPositioned { mover.dock = it.boundsInRoot() }) {
         val size = l.layout.dockSize
@@ -1971,7 +1975,7 @@ private fun SettingsScreen(l: Launcher) {
                     PreviewIcons(l, mine.ifEmpty { l.apps.map { Target.App(it.id) } }, layout.columns, ICON, labels = true, Modifier.height(148.dp))
                 }
                 Section.DRAWER -> DrawerPreview(l, layout)
-                Section.DOCK -> PreviewIcons(l, layout.dock.firstOrNull().orEmpty().take(layout.dockSize).map { it.tap?.takeUnless(l::hides) }, layout.dockSize, ICON, labels = false, Modifier.height(120.dp))
+                Section.DOCK -> PreviewIcons(l, layout.dock.getOrNull(layout.defaultDockPage).orEmpty().take(layout.dockSize).map { it.tap?.takeUnless(l::hides) }, layout.dockSize, ICON, labels = false, Modifier.height(120.dp))
                 else -> Unit
             }
             Column(Modifier.weight(1f).fillMaxWidth().background(Color.Black).verticalScroll(trail.last().second).navigationBarsPadding().padding(bottom = 16.dp)) {
@@ -2529,13 +2533,22 @@ private fun DockSettings(l: Launcher, layout: Layout) {
     Header(stringResource(R.string.settings_pages))
     layout.dock.forEachIndexed { i, icons ->
         val used = icons.count { it != DockIcon() }
-        val summary = if (used == 0) stringResource(R.string.settings_page_empty) else pluralStringResource(R.plurals.count_icons, used, used)
-        SettingRow(stringResource(R.string.settings_page, i + 1), summary) {
+        val main = i == layout.defaultDockPage
+        val summary = listOfNotNull(
+            stringResource(R.string.desktop_page_main).takeIf { main },
+            if (used == 0) stringResource(R.string.settings_page_empty) else pluralStringResource(R.plurals.count_icons, used, used),
+        )
+        SettingRow(stringResource(R.string.settings_page, i + 1), summary.joinToString(" · ")) {
             if (layout.dock.size > 1) {
-                IconAction(UP, stringResource(R.string.move_up), enabled = i > 0) { l.update { it.copy(dock = it.dock.shifted(i, i - 1)) } }
-                IconAction(DOWN, stringResource(R.string.move_down), enabled = i < layout.dock.lastIndex) { l.update { it.copy(dock = it.dock.shifted(i, i + 1)) } }
+                IconAction(UP, stringResource(R.string.move_up), enabled = i > 0) { l.update { it.withDockPageMoved(i, i - 1) } }
+                IconAction(DOWN, stringResource(R.string.move_down), enabled = i < layout.dock.lastIndex) { l.update { it.withDockPageMoved(i, i + 1) } }
+            }
+            // As on the desktop pages: the house marks the main one, and makes another page the main one.
+            if (main) GlyphIcon(HOUSE, ACCENT, Modifier.padding(12.dp))
+            else IconAction(HOUSE, stringResource(R.string.desktop_make_main)) { l.update { it.copy(defaultDockPage = i) } }
+            if (layout.dock.size > 1) {
                 IconAction(TRASH, stringResource(R.string.remove)) {
-                    val remove = { l.update { it.copy(dock = it.dock.filterIndexed { j, _ -> j != i }) } }
+                    val remove = { l.update { it.withoutDockPage(i) } }
                     if (used == 0) remove()
                     else l.popup = Popup.Confirm(
                         l.getString(R.string.settings_remove_page, i + 1),

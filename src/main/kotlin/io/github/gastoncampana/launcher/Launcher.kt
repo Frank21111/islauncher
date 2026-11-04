@@ -190,6 +190,8 @@ class Launcher : ComponentActivity() {
         private set
     var drawerResets by mutableIntStateOf(0) // bumped to close the drawer without its exit animation
         private set
+    var dockResets by mutableIntStateOf(0) // bumped to put the dock back on its main page
+        private set
     var today by mutableStateOf("")
         private set
     var cellSize = DpSize(90.dp, 150.dp) // measured by the desktop; sizes new widgets
@@ -281,6 +283,7 @@ class Launcher : ComponentActivity() {
         settle() // leaving ends the undo of a thrown item
         closeAll() // come back to a clean home screen after opening an app
         hideDrawer() // gone on return, rather than fading out then
+        dockResets++ // and with the dock on its main page
     }
 
     override fun onDestroy() {
