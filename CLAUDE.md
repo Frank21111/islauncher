@@ -36,7 +36,8 @@ picker must see non-exported widget receivers, which a `<queries>` block misses)
 - `Model.kt`: pure logic. `Layout` holds dock pages (`DockIcon`s: tap/up/down targets), desktop pages of `Item`s
   (icons and widgets on half cells), drawer tabs, hidden apps, the double-tap target and the settings: desktop and
   drawer grids, dock icons per page, dock wrap-around, the main dock page (`defaultDockPage`: the dock goes back to it
-  whenever the home screen is left, `dockResets` in `onStop`), haptics, the app the poison pause offers `instead`, the number
+  whenever the home screen is left, `dockResets` in `onStop`), `showDock` and `showSearchBar` (a hidden dock takes no
+  drops), haptics, the app the poison pause offers `instead`, the number
   format (`decimal`; null follows the phone's country), `hideSuspended` (Apps pausadas: Atenuar / Ocultar). Every dock page keeps at least `dockSize` icons; those past
   it stay saved, hidden. Shrinking the grid (`withGrid`) or removing a page (`withoutPage`) moves what no longer fits
   to the nearest free spot, else another page, else a new one: nothing is dropped. `withPageMoved` reorders desktop

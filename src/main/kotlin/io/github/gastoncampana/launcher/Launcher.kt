@@ -929,7 +929,7 @@ class Launcher : ComponentActivity() {
                 Log.w(TAG, "Nova import failed", e)
                 return@launch toast(getString(R.string.backup_nova_read_failed))
             }
-            replaceLayout(imported.copy(poisons = layout.poisons, haptics = layout.haptics, instead = layout.instead, decimal = layout.decimal, hideSuspended = layout.hideSuspended))
+            replaceLayout(imported.copy(poisons = layout.poisons, haptics = layout.haptics, instead = layout.instead, decimal = layout.decimal, hideSuspended = layout.hideSuspended, showDock = layout.showDock, showSearchBar = layout.showSearchBar))
             toast(getString(R.string.backup_nova_imported))
         }
     }

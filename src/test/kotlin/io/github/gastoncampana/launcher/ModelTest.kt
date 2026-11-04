@@ -122,8 +122,16 @@ class ModelTest {
             instead = App("k/k.Kindle#0"),
             decimal = '.',
             hideSuspended = true,
+            showDock = false,
+            showSearchBar = false,
         )
         assertEquals(layout, parseLayout(layout.toJson()))
+    }
+
+    @Test
+    fun dockAndSearchBarShowForLayoutsSavedBeforeTheSettings() {
+        val old = parseLayout("""{"dock":[[]],"desktop":[[]],"tabs":[]}""")
+        assertEquals(true to true, old.showDock to old.showSearchBar)
     }
 
     @Test

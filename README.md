@@ -136,7 +136,8 @@ A launcher sees every app you have and every app you open, so this one is built 
 - The Home button closes whatever is open (a menu, the drawer, Settings). With nothing open on the home screen, it
   goes back to the main page, and pressing it on the main page opens search.
 - The search bar has buttons for the voice assistant and Google Lens, and shows today's date, which opens your
-  calendar. There is no weather, because it would need the network.
+  calendar. There is no weather, because it would need the network. Settings → Home screen → Search bar hides it,
+  and the desktop takes its space; a swipe up still opens the drawer and its search.
 - Apps paused by Focus mode or a Digital Wellbeing limit are greyed out. Settings → Home screen → Paused apps can
   hide them instead: they leave the desktop, the dock and the drawer tabs, keeping their place, and come back when
   the pause ends. Search still shows them, greyed out, and one dragged from there is placed out of sight, with a
@@ -147,6 +148,8 @@ A launcher sees every app you have and every app you open, so this one is built 
 <details>
 <summary><strong>Dock</strong></summary>
 
+- Settings → Dock → Show dock hides the whole dock: the desktop takes its space, and its icons are kept for when it
+  comes back.
 - Several dock pages, which wrap around from the last page to the first (you can turn that off).
 - One dock page is the main one, marked with a house in Settings → Dock. The dock starts on it and goes back to it
   whenever you leave the home screen, such as after opening an app.
@@ -271,8 +274,8 @@ A launcher sees every app you have and every app you open, so this one is built 
   - drawer tabs and hidden apps
   - grid sizes (except the drawer's rows), the main page, the double-tap gesture and dock wrap-around
 
-  Your poisons, the app the pause offers instead, the haptic feedback setting, the number format and the paused apps
-  setting are kept.
+  Your poisons, the app the pause offers instead, the haptic feedback setting, the number format, the paused apps
+  setting and whether the dock and the search bar show are kept.
 
 </details>
 

@@ -82,6 +82,9 @@ data class Layout(
     val decimal: Char? = null,
     /** Apps paused by Focus mode or a Digital Wellbeing limit leave the desktop, dock and drawer tabs instead of greying out; search still shows them. */
     val hideSuspended: Boolean = false,
+    /** Off, the desktop takes the space of the dock or the search bar; the dock's icons stay saved. */
+    val showDock: Boolean = true,
+    val showSearchBar: Boolean = true,
 )
 
 fun <T> List<T>.replaced(index: Int, f: (T) -> T): List<T> = mapIndexed { i, x -> if (i == index) f(x) else x }
@@ -420,6 +423,8 @@ fun Layout.toJson(): String = JSONObject()
     .put("instead", instead?.toJson())
     .put("decimal", decimal?.toString())
     .put("hideSuspended", hideSuspended)
+    .put("showDock", showDock)
+    .put("showSearchBar", showSearchBar)
     .toString()
 
 fun parseLayout(json: String): Layout {
@@ -457,6 +462,8 @@ fun parseLayout(json: String): Layout {
         instead = root.target("instead"),
         decimal = root.optString("decimal").singleOrNull()?.takeIf { it == ',' || it == '.' },
         hideSuspended = root.optBoolean("hideSuspended"),
+        showDock = root.optBoolean("showDock", true),
+        showSearchBar = root.optBoolean("showSearchBar", true),
     )
 }
 

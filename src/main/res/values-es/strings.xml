@@ -254,6 +254,10 @@
     <string name="dock_icons_per_page_summary">Los que sobren se guardan hasta que vuelva a haber lugar</string>
     <string name="dock_infinite_scroll">Desplazamiento infinito</string>
     <string name="dock_infinite_scroll_summary">De la última página se pasa a la primera</string>
+    <string name="dock_show">Mostrar dock</string>
+    <string name="dock_show_summary">Apagado, el escritorio usa su lugar; sus íconos quedan guardados</string>
+    <string name="search_bar_show">Barra de búsqueda</string>
+    <string name="search_bar_show_summary">Abajo en el escritorio: búsqueda, asistente, Lens y la fecha</string>
     <string name="dock_remove_page_text">Se quitan sus íconos del dock y lo que abren al deslizarlos.</string>
 
     <!-- Backup -->
@@ -271,7 +275,7 @@
     <string name="backup_chosen_folder">la carpeta elegida</string>
     <string name="backup_import_nova">Importar de Nova</string>
     <string name="backup_import_nova_summary">Desde un archivo .novabackup</string>
-    <string name="backup_import_nova_text">Reemplaza el escritorio, el dock, las pestañas, las apps ocultas y las grillas; los venenos, la app que ofrece la pausa, la vibración, el formato de números y cómo se ven las apps pausadas quedan. Los widgets se vuelven a configurar tocándolos.</string>
+    <string name="backup_import_nova_text">Reemplaza el escritorio, el dock, las pestañas, las apps ocultas y las grillas; los venenos, la app que ofrece la pausa, la vibración, el formato de números, cómo se ven las apps pausadas y si se muestran el dock y la barra de búsqueda quedan. Los widgets se vuelven a configurar tocándolos.</string>
     <string name="backup_saved">Copia guardada</string>
     <string name="backup_save_failed">No se pudo guardar la copia</string>
     <string name="backup_restored">Copia restaurada</string>
@@ -320,6 +324,7 @@
     <string name="guide_dock_setup_how">Mantené presionado un ícono del dock → Configurar: qué abre al tocarlo y al deslizarlo hacia arriba o hacia abajo</string>
     <string name="guide_dock_drop">Agregar al dock</string>
     <string name="guide_dock_drop_how">Arrastrá una app del cajón o del escritorio a un lugar vacío del dock</string>
+    <string name="guide_dock_show_how">Ajustes → Dock → Mostrar dock: apagado, el escritorio usa su lugar y los íconos del dock quedan guardados</string>
     <string name="guide_dock_pages">Páginas del dock</string>
     <string name="guide_dock_pages_how">En Ajustes → Dock agregá, ordená y quitá páginas, y elegí los íconos por página; deslizá el dock de costado para pasar de una a otra, y con Desplazamiento infinito de la última se pasa a la primera. La casita marca la principal: el dock arranca ahí y vuelve a ella después de abrir una app</string>
     <string name="guide_drawer">Abrir y cerrar</string>
@@ -351,7 +356,7 @@
     <string name="guide_actions_how">Un teléfono ofrece Llamar, Enviar SMS y, si está instalado, WhatsApp; un enlace, Abrir, si ninguna app coincide; un correo, Escribir</string>
     <string name="guide_search_with_how">Le pasa lo que escribiste a Google, DuckDuckGo, Play Store, Spotify o Firefox Focus</string>
     <string name="guide_bar">La barra de búsqueda</string>
-    <string name="guide_bar_how">Sus botones abren el asistente y Google Lens, y la fecha abre el calendario</string>
+    <string name="guide_bar_how">Sus botones abren el asistente y Google Lens, y la fecha abre el calendario; Ajustes → Escritorio → Barra de búsqueda la oculta, y deslizar hacia arriba sigue abriendo el cajón con su búsqueda</string>
     <string name="guide_poison_how">Mantené presionada una app en el cajón → Marcar como veneno, o tildalas en Ajustes → Cajón de apps → Venenos</string>
     <string name="guide_pause">Una pausa que crece</string>
     <plurals name="guide_pause_how">

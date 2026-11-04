@@ -243,6 +243,10 @@
     <string name="dock_icons_per_page_summary">Extra ones are kept until there is room again</string>
     <string name="dock_infinite_scroll">Infinite scroll</string>
     <string name="dock_infinite_scroll_summary">The last page leads to the first</string>
+    <string name="dock_show">Show dock</string>
+    <string name="dock_show_summary">Off, the home screen takes its space; its icons are kept</string>
+    <string name="search_bar_show">Search bar</string>
+    <string name="search_bar_show_summary">At the bottom of the home screen: search, assistant, Lens and the date</string>
     <string name="dock_remove_page_text">Removes its dock icons and what their swipes open.</string>
 
     <!-- Backup -->
@@ -260,7 +264,7 @@
     <string name="backup_chosen_folder">the chosen folder</string>
     <string name="backup_import_nova">Import from Nova</string>
     <string name="backup_import_nova_summary">From a .novabackup file</string>
-    <string name="backup_import_nova_text">Replaces the home screen, dock, tabs, hidden apps and grids; poisons, the app the pause offers, vibration, the number format and how paused apps show stay. Widgets are set up again by tapping them.</string>
+    <string name="backup_import_nova_text">Replaces the home screen, dock, tabs, hidden apps and grids; poisons, the app the pause offers, vibration, the number format, how paused apps show and whether the dock and the search bar show stay. Widgets are set up again by tapping them.</string>
     <string name="backup_saved">Backup saved</string>
     <string name="backup_save_failed">Couldn\'t save the backup</string>
     <string name="backup_restored">Backup restored</string>
@@ -309,6 +313,7 @@
     <string name="guide_dock_setup_how">Long-press a dock icon → Configure: what a tap and a swipe up or down on it open</string>
     <string name="guide_dock_drop">Add to the dock</string>
     <string name="guide_dock_drop_how">Drag an app from the drawer or the home screen onto an empty spot in the dock</string>
+    <string name="guide_dock_show_how">Settings → Dock → Show dock: turned off, the home screen takes its space and the dock\'s icons stay saved</string>
     <string name="guide_dock_pages">Dock pages</string>
     <string name="guide_dock_pages_how">Add, reorder and remove dock pages and set the icons per page in Settings → Dock; swipe the dock sideways between pages, and with Infinite scroll the last leads to the first. The house marks the main page: the dock starts there and goes back to it after you open an app</string>
     <string name="guide_drawer">Open and close</string>
@@ -339,7 +344,7 @@
     <string name="guide_actions_how">A phone number offers Call, Send SMS and, if it is installed, WhatsApp; a link, Open, when no app matches; an e-mail address, Write</string>
     <string name="guide_search_with_how">Hands what you typed to Google, DuckDuckGo, Play Store, Spotify or Firefox Focus</string>
     <string name="guide_bar">The search bar</string>
-    <string name="guide_bar_how">Its buttons open the assistant and Google Lens, and the date opens your calendar</string>
+    <string name="guide_bar_how">Its buttons open the assistant and Google Lens, and the date opens your calendar; Settings → Home screen → Search bar hides it, and a swipe up still opens the drawer and its search</string>
     <string name="guide_poison_how">Long-press an app in the drawer → Mark as poison, or tick them in Settings → App drawer → Poisons</string>
     <string name="guide_pause">A pause that grows</string>
     <plurals name="guide_pause_how">

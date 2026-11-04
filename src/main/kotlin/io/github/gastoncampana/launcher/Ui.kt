@@ -402,8 +402,9 @@ private fun Home(l: Launcher, mover: Mover) {
                 SnackbarHost(bar, Modifier.align(Alignment.BottomCenter))
             }
             PageLine(pager)
-            Dock(l, mover)
-            SearchPill(l)
+            // A hidden dock takes no drops: they land on the desktop.
+            if (layout.showDock) Dock(l, mover) else SideEffect { mover.dock = Rect.Zero }
+            if (layout.showSearchBar) SearchPill(l)
         }
         mover.drag?.let { d ->
             val size = with(LocalDensity.current) { d.size.toSize().toDpSize() }
@@ -2110,6 +2111,7 @@ private fun GuideSettings(welcome: Boolean, open: (Section) -> Unit) {
             Tip(R.string.guide_placeholder, R.string.guide_placeholder_how),
         ),
         R.string.settings_dock to listOf(
+            Tip(R.string.dock_show, R.string.guide_dock_show_how, Section.DOCK),
             Tip(R.string.guide_dock_setup, R.string.guide_dock_setup_how),
             Tip(R.string.guide_dock_drop, R.string.guide_dock_drop_how),
             Tip(R.string.guide_dock_pages, R.string.guide_dock_pages_how, Section.DOCK),
@@ -2132,7 +2134,7 @@ private fun GuideSettings(welcome: Boolean, open: (Section) -> Unit) {
             Tip(R.string.guide_convert, R.string.guide_convert_how),
             Tip(R.string.guide_actions, R.string.guide_actions_how),
             Tip(R.string.search_with, R.string.guide_search_with_how),
-            Tip(R.string.guide_bar, R.string.guide_bar_how),
+            Tip(R.string.guide_bar, R.string.guide_bar_how, Section.DESKTOP),
         ),
         R.string.poisons to listOf(
             Tip(R.string.poison_mark, R.string.guide_poison_how, Section.DRAWER),
@@ -2193,6 +2195,9 @@ private fun DesktopSettings(l: Launcher, layout: Layout, onTidy: () -> Unit) {
         },
         onTidy,
     )
+    SwitchRow(l, stringResource(R.string.search_bar_show), stringResource(R.string.search_bar_show_summary), layout.showSearchBar) { on ->
+        l.update { it.copy(showSearchBar = on) }
+    }
     // Focus mode and Digital Wellbeing pause apps; greyed (as in Nova) or left out of the desktop, dock and drawer tabs.
     SettingRow(stringResource(R.string.paused_apps), stringResource(if (layout.hideSuspended) R.string.paused_hide_summary else R.string.paused_dim_summary), { l.popup = Popup.PausedApps }) {
         Box {
@@ -2524,6 +2529,9 @@ private fun DockDialog(l: Launcher, p: Popup.DockSetup, icon: DockIcon) {
 @Composable
 private fun DockSettings(l: Launcher, layout: Layout) {
     Header(stringResource(R.string.settings_layout), divider = false)
+    SwitchRow(l, stringResource(R.string.dock_show), stringResource(R.string.dock_show_summary), layout.showDock) { on ->
+        l.update { it.copy(showDock = on) }
+    }
     SettingRow(stringResource(R.string.dock_icons_per_page), stringResource(R.string.dock_icons_per_page_summary)) {
         Stepper(l, layout.dockSize) { n -> l.update { it.withDockSize(n) } }
     }
