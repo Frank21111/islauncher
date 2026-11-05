@@ -26,6 +26,11 @@
   <img src="docs/screenshots/widgets.png" width="31%" alt="Widget picker with previews">
   <img src="docs/screenshots/guide.png" width="31%" alt="The feature guide in Settings">
 </p>
+<p align="center">
+  <img src="docs/screenshots/blocks.png" width="31%" alt="Settings → Blocks with a running block, a scheduled one and the browsers it reads">
+  <img src="docs/screenshots/block-editor.png" width="31%" alt="A running block: its apps and sites can only be added to">
+  <img src="docs/screenshots/block-hours.png" width="31%" alt="A block's hours: days, a start and an end that runs into the next day">
+</p>
 
 ## Why Islauncher
 
