@@ -10,6 +10,9 @@ blocks libraries from adding it. Never remove that line or add a feature that ne
 a dependency, confirm with `apkanalyzer manifest permissions build/outputs/apk/release/islauncher-release.apk`.
 Cloud backup is off too (`allowBackup="false"`). The layout backups (manual and weekly) go through the system file
 picker with `EXTRA_LOCAL_ONLY`, so a cloud provider cannot be chosen: keep that extra on any new picker that writes.
+Blocks see more than any other part (an accessibility service can read the screen, notification access every
+notification): they read only the app in front, a browser's own views (never a page: `barNodes` skips its subtree)
+and a notification's package and key, and log or keep none of it beyond the blocks and each browser's last read day.
 
 ## Commands
 
@@ -18,6 +21,9 @@ picker with `EXTRA_LOCAL_ONLY`, so a cloud provider cannot be chosen: keep that 
   Home asks which launcher to use). The script stops the app first and warns if the choice was lost anyway.
 - Unit tests: `./gradlew testDebugUnitTest`
 - Build a GitHub release APK: `scripts/release.sh` (tests, signature and no-INTERNET checks, SHA-256 for the notes).
+- Set blocks up on the USB-connected phone, once: `scripts/blocks-setup.sh` (secure settings permission, device admin,
+  notification access, accessibility service; no account removed, unlike a device owner).
+- Build machine: JDK 21 (`JAVA_HOME`) and the SDK in `~/Android/Sdk` (`local.properties`), platform 37.0.
 - Make it the default: Ajustes → Apps → Apps predeterminadas → App de inicio.
 
 Release builds are signed with the key in `~/.config/islauncher/` (`release.p12`, `password`), which never enters the
@@ -28,8 +34,10 @@ A restored backup or Nova import goes through `restored`: past `MAX_ITEMS`, `MAX
 rejected before anything is saved, because a saved layout that cannot render would fail on every start.
 
 Other permissions: `EXPAND_STATUS_BAR` (swipe down opens notifications), `QUERY_ALL_PACKAGES` (the widget
-picker must see non-exported widget receivers, which a `<queries>` block misses) and `REQUEST_DELETE_PACKAGES`
-(Desinstalar: `ACTION_DELETE`, Android's own confirmation; a normal permission, granted at install).
+picker must see non-exported widget receivers, which a `<queries>` block misses), `REQUEST_DELETE_PACKAGES`
+(Desinstalar: `ACTION_DELETE`, Android's own confirmation; a normal permission, granted at install) and
+`WRITE_SECURE_SETTINGS` (blocks: only adb grants it; `guardBlocks` turns the blocking service back on with it and keeps
+the time automatic during a block).
 
 ## Layout
 
@@ -58,6 +66,24 @@ picker must see non-exported widget receivers, which a `<queries>` block misses)
   (`whatsAppNumber` adds Argentina's mobile 9), links and e-mail addresses, numbers read and shown by `formatNumber`
   with the chosen decimal mark.
   Unit-tested in `src/test`.
+- `Blocks.kt`: pure logic of blocks ("bloqueos"). A `Rule` has packages, sites (hosts, `site` normalises what is typed,
+  IDN to ASCII) and weekly `Span`s (days a span starts on, start and end minutes; an end before the start runs into the
+  next day, midnight as an end is 1440). `activeAt`, `blockedUntil` (rules back to back count as one), `nextChange`,
+  `problemSaving` (something to block, valid spans, `FREE_MINUTES` free in a row each week, and while running only
+  `tightened`), `canRemove`. `readAddress` turns a browser's `BarNode`s into an `Address` (Site, Own, Typing, Unknown):
+  bar ids (url, omnibar, location_bar, address, domain) in the top quarter or bottom fifth, text and description both,
+  bidi marks stripped; only a focused field of the browser's own is typing. `trustedTime` ignores a wall-clock jump
+  during a block. The fixtures in `BlocksTest` are real address bars of seven browsers (Chrome, Brave, Edge, Opera,
+  DuckDuckGo, Samsung Internet, Firefox), read on a Motorola with Android 13.
+- `Blocking.kt`: `BlockStore` (prefs `blocks`: key `rules`, `anchor` for the clock, `read.<pkg>` the day a browser's
+  bar was last read; never in the layout, so backups and Nova imports leave blocks alone), `BlockService` (the
+  accessibility service: a blocked app goes home whatever opened it; a browser on a blocked site goes back, or home if
+  that leaves it there; a browser not read within `UNREAD_GRACE_MS` of coming to the front goes home; during a block,
+  Ajustes' pages that would undo it go home, found by class and title), `BlockListener` (snoozes a blocked app's
+  notifications until the block ends and pauses its media sessions, holding their controllers; its reconnection
+  after a force stop is what turns the service back on), `BlockAdmin` (no policies: an active admin cannot be
+  uninstalled), `guardBlocks`/`BlockGuard` (rewrite only what is missing, at most once a second, retried after; a write
+  fires the observers again), `blockSetup`, `unblockable` (this app, Ajustes, the phone and SMS apps).
 - `Nova.kt`: pure converter from Nova's `favorites`/`drawer_groups`/`appgroups` rows and prefs (grids included) to a
   `Layout`. `appgroups` group -1 is Nova's hidden apps. `NovaImport.kt` reads the `.novabackup` zip (nova.db + nova.xml).
 - `Launcher.kt`: the activity (app list, app shortcuts, widget host and bind/configure flow, backups, Nova import),
@@ -100,6 +126,9 @@ picker must see non-exported widget receivers, which a `<queries>` block misses)
   With `hideSuspended`, `Launcher.hides` keeps a paused app's desktop icons and dock taps from being drawn (the item
   stays saved, so its spot stays taken, though a long press there opens the desktop menu) and `Launcher.tabbed` leaves
   it out of the tabs; search lists `apps`, and one dragged from there is placed with a toast saying it is paused.
+  Bloqueos is `Section.BLOCKS` (`BlocksSettings`): the setup rows (read again on each `Launcher.resumes`), the blocks,
+  the browsers and whether their bar was read; `Popup.EditBlock` is the full-screen `BlockEditor`, whose trash on what
+  a running block had only says so, and whose save checks `problemSaving` again as it saves.
 - The layout is stored as JSON in SharedPreferences `launcher`, key `layout`; key `launched` marks the first launch, for
   `opensGuide`. An unreadable layout is kept under
   `layout.corrupt` instead of being overwritten. Prefs `opens` counts today's opens of poison apps; prefs `usage`
@@ -107,7 +136,9 @@ picker must see non-exported widget receivers, which a `<queries>` block misses)
   the layout so backups skip it; a faded entry is dropped only once `UNUSED_DAYS` old (`kept`), so a missing one means
   no open in that long, and key `tracked` is the day counting began (written once, by `countedSince`); prefs `backup` holds the weekly backup folder (a persisted SAF tree URI) and when it last ran.
 
-Features worth knowing before editing: "venenos" (`Layout.poisons`) open only after a pause that grows with each
+Features worth knowing before editing: an app a running block holds does not open at all: `pauseIfPoison` checks
+`Launcher.blocked` first (a toast says until when; never counted), and `startIntent` checks an app the list lacks by
+package. "venenos" (`Layout.poisons`) open only after a pause that grows with each
 open today; every way the launcher opens an app (`start`, `open`, `startIntent`) goes through `pauseIfPoison`, so
 a new one must too. The pause can offer `Layout.instead` (opened with `open`, so a poison there pauses as well;
 `Popup.Pause` is keyed so that pause starts its own countdown). Known gaps: notifications, recents, and an app
