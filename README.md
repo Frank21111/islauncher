@@ -54,6 +54,9 @@ language settings (Settings → System → Languages → App languages, or the a
 2. Open it on the phone and allow installs from that app when Android asks. Play Protect may warn you, because the app
    does not come from Google Play.
 3. Press Home and pick Islauncher, then "Always". The launcher's own settings also have a row for this.
+4. Optional, for [blocks](#features): with the phone connected over USB and USB debugging on, run
+   `scripts/blocks-setup.sh` from a clone of this repository once, or the adb commands Settings → Blocks copies. No
+   account is removed.
 
 Moving from Nova? Export a backup there, then import it from Settings → Backup in Islauncher.
 
@@ -78,7 +81,7 @@ A launcher sees every app you have and every app you open, so this one is built 
   tools). It lists the five permissions under [Permissions](#permissions), and INTERNET is not one of them.
 - **No cloud backup.** `android:allowBackup="false"` keeps the app's data out of Android's cloud backup. Since
   Android 12 that setting does not stop a device-to-device transfer, so setting up a new phone from this one can
-  copy the layout across.
+  copy the layout and the blocks across.
 - **Layout backups stay local.** Manual and weekly backups are written through the system file picker with
   `EXTRA_LOCAL_ONLY`, so cloud providers are not offered as a destination. A local folder that another app syncs
   is still synced by that app.
@@ -107,8 +110,9 @@ A launcher sees every app you have and every app you open, so this one is built 
   never its content. Nothing of it is stored or logged, and with no network permission nothing could leave. The
   only things kept are the blocks themselves and, per browser, the day its address bar was last read (for Settings).
 - **Everything else stays in the app's private storage.** That covers the layout (JSON in SharedPreferences),
-  today's open counts for poison apps (older days are dropped), the search use scores, the weekly backup folder and
-  the icons of pinned shortcuts. Uninstalling deletes all of it, but not the backup files you saved elsewhere.
+  today's open counts for poison apps (older days are dropped), the search use scores, the weekly backup folder, the
+  icons of pinned shortcuts, and the blocks with the day each browser's address bar was last read. Uninstalling
+  deletes all of it, but not the backup files you saved elsewhere.
 
 ## Features
 
@@ -304,6 +308,8 @@ A launcher sees every app you have and every app you open, so this one is built 
 
 - Manual backups: save the whole layout (desktop, dock, tabs, hidden apps, poisons and settings) to a JSON file, or
   restore it from one. Restoring replaces the current layout.
+- Blocks are not in any backup, so neither a restore nor a Nova import changes them: a running block cannot be undone
+  that way.
 - Weekly backups go to a folder you choose. The first copy is written right away, and then one whenever you come
   back to the home screen and seven days have passed since the last one, so no background scheduler is needed. A
   failed copy is retried the next day. Each copy is a new dated file; old ones are not deleted.
@@ -321,8 +327,9 @@ A launcher sees every app you have and every app you open, so this one is built 
 ## Building from source
 
 The app is written in Kotlin with Jetpack Compose and depends only on AndroidX (Compose Material 3, Activity, Core).
-You need JDK 21 (a full JDK, because the build needs `javac`) and the Android SDK with platform 37. Gradle comes with
-the wrapper.
+You need JDK 21 (a full JDK, because the build needs `javac`) and the Android SDK with platform 37 (the
+`platforms;android-37.0` package of `sdkmanager`). Gradle comes with the wrapper, and the build downloads the
+build-tools it needs.
 
 1. Point the build at the SDK, either with `ANDROID_HOME` or with `sdk.dir` in `local.properties`. Android Studio
    writes that file, and git ignores it.
