@@ -26,6 +26,11 @@
   <img src="docs/screenshots/widgets.png" width="31%" alt="Widget picker with previews">
   <img src="docs/screenshots/guide.png" width="31%" alt="The feature guide in Settings">
 </p>
+<p align="center">
+  <img src="docs/screenshots/blocks.png" width="31%" alt="Settings → Blocks with a running block, a scheduled one and the browsers it reads">
+  <img src="docs/screenshots/block-editor.png" width="31%" alt="A running block: its apps and sites can only be added to">
+  <img src="docs/screenshots/block-hours.png" width="31%" alt="A block's hours: days, a start and an end that runs into the next day">
+</p>
 
 ## Why Islauncher
 
@@ -38,6 +43,9 @@ permission, so that knowledge has nowhere to go: no analytics, no crash reportin
 - **Search that answers.** Sums, percentages and offline unit conversion. Phone numbers, links and e-mail addresses
   become actions. Apps you use more rise to the top, and that score never leaves the phone.
 - **Poisons.** Mark the apps that eat your time, and they open only after a pause that grows with each open that day.
+- **Blocks.** Keep apps and sites closed during the hours you choose, in any browser, with their notifications held
+  until the block ends. While a block runs it can only grow. It needs a one-time setup over adb, with no account
+  removed.
 - **Move in from Nova.** Import a `.novabackup` with your pages, dock, tabs and hidden apps.
 - **Backups stay on the phone.** Save the layout by hand or weekly, to local storage only.
 - **Nothing to discover by accident.** Settings → Guide shows what every part of the app can do.
@@ -51,6 +59,9 @@ language settings (Settings → System → Languages → App languages, or the a
 2. Open it on the phone and allow installs from that app when Android asks. Play Protect may warn you, because the app
    does not come from Google Play.
 3. Press Home and pick Islauncher, then "Always". The launcher's own settings also have a row for this.
+4. Optional, for [blocks](#features): with the phone connected over USB and USB debugging on, run
+   `scripts/blocks-setup.sh` from a clone of this repository once, or the adb commands Settings → Blocks copies. No
+   account is removed.
 
 Moving from Nova? Export a backup there, then import it from Settings → Backup in Islauncher.
 
@@ -72,10 +83,10 @@ A launcher sees every app you have and every app you open, so this one is built 
   permission Android gives the app no network sockets.
 - **Check any build yourself:**
   `apkanalyzer manifest permissions islauncher-<version>.apk` (apkanalyzer comes with the Android SDK command-line
-  tools). It lists the four permissions under [Permissions](#permissions), and INTERNET is not one of them.
+  tools). It lists the five permissions under [Permissions](#permissions), and INTERNET is not one of them.
 - **No cloud backup.** `android:allowBackup="false"` keeps the app's data out of Android's cloud backup. Since
   Android 12 that setting does not stop a device-to-device transfer, so setting up a new phone from this one can
-  copy the layout across.
+  copy the layout and the blocks across.
 - **Layout backups stay local.** Manual and weekly backups are written through the system file picker with
   `EXTRA_LOCAL_ONLY`, so cloud providers are not offered as a destination. A local folder that another app syncs
   is still synced by that app.
@@ -97,9 +108,16 @@ A launcher sees every app you have and every app you open, so this one is built 
   are kept apart from the layout, so neither the manual nor the weekly backups carry them (a device-to-device
   transfer can copy them, as it can the layout). Each score keeps the day of its app's last open, for at least 60
   days, and the launcher notes the day it began counting: "Not opened in a while" reads both.
+- **Blocks read the screen, and keep none of it.** To keep a blocked app closed whatever opens it, and a blocked site
+  closed in any browser, blocks use an accessibility service, which can see the screen, and notification access,
+  which sees every notification. They are off until you set blocks up. The service reads which app is in front and,
+  during a block with sites, a browser's address bar, never a page. The listener reads a notification's app and key,
+  never its content. Nothing of it is stored or logged, and with no network permission nothing could leave. The
+  only things kept are the blocks themselves and, per browser, the day its address bar was last read (for Settings).
 - **Everything else stays in the app's private storage.** That covers the layout (JSON in SharedPreferences),
-  today's open counts for poison apps (older days are dropped), the search use scores, the weekly backup folder and
-  the icons of pinned shortcuts. Uninstalling deletes all of it, but not the backup files you saved elsewhere.
+  today's open counts for poison apps (older days are dropped), the search use scores, the weekly backup folder, the
+  icons of pinned shortcuts, and the blocks with the day each browser's address bar was last read. Uninstalling
+  deletes all of it, but not the backup files you saved elsewhere.
 
 ## Features
 
@@ -208,6 +226,36 @@ A launcher sees every app you have and every app you open, so this one is built 
 </details>
 
 <details>
+<summary><strong>Blocks</strong></summary>
+
+- Settings → Blocks: each block has a name, apps, sites and weekly hours (days, a start and an end; an end before the
+  start runs into the next day). During its hours:
+  - its apps go home as soon as they show, whatever opened them: the launcher, Recents, a notification, another app
+    or a call (the phone and SMS apps, Settings, the home app in use and Islauncher itself cannot be blocked);
+  - its sites go back in any browser, or home when going back leaves them there. A site blocks its subdomains too
+    (`youtube.com` covers `m.youtube.com`);
+  - their notifications are snoozed until it ends, when they come back, and their sound is paused, again if it
+    resumes.
+- While a block runs it can only grow: apps, sites and hours can be added, nothing removed or shortened, and the
+  block cannot be deleted. The Settings screens that would undo it (Islauncher's app info and its other pages, its
+  accessibility page, notification access, the device admin, date and time) go home during a block too, and the time
+  and time zone stay automatic. A block must leave at least an hour in a row free each week, so none can lock the
+  phone for good.
+- Browsers are recognised by opening any web address, not from a list. Their address bar is read from its view, at
+  the top or the bottom of the screen; while it is hidden by scrolling, the last address read counts, and it shows
+  again whenever a link leads to another site. A browser whose address bar cannot be read in its first two and a half
+  seconds goes home during a block with sites. Settings → Blocks lists the browsers and whether their address bar
+  was read.
+- **Setup, once:** with the phone connected over USB and USB debugging on, run `scripts/blocks-setup.sh`, or the
+  commands Settings → Blocks copies. It grants the secure settings permission (so the app can turn its service back
+  on and keep the time automatic), activates a device admin with no policies (so the app cannot be uninstalled while
+  it is active), and turns on notification access and the accessibility service. No account is touched. With no
+  blocks left, Settings → Blocks → Turn blocks off undoes it, except notification access, which only you can turn off.
+- See [Known limitations](#known-limitations) for what a block does not stop.
+
+</details>
+
+<details>
 <summary><strong>Shortcuts</strong></summary>
 
 - An app's menu (long-press it on the desktop, in the dock or in the drawer) starts with up to four of its shortcuts,
@@ -265,6 +313,8 @@ A launcher sees every app you have and every app you open, so this one is built 
 
 - Manual backups: save the whole layout (desktop, dock, tabs, hidden apps, poisons and settings) to a JSON file, or
   restore it from one. Restoring replaces the current layout.
+- Blocks are not in any backup, so neither a restore nor a Nova import changes them: a running block cannot be undone
+  that way.
 - Weekly backups go to a folder you choose. The first copy is written right away, and then one whenever you come
   back to the home screen and seven days have passed since the last one, so no background scheduler is needed. A
   failed copy is retried the next day. Each copy is a new dated file; old ones are not deleted.
@@ -282,8 +332,9 @@ A launcher sees every app you have and every app you open, so this one is built 
 ## Building from source
 
 The app is written in Kotlin with Jetpack Compose and depends only on AndroidX (Compose Material 3, Activity, Core).
-You need JDK 21 (a full JDK, because the build needs `javac`) and the Android SDK with platform 37. Gradle comes with
-the wrapper.
+You need JDK 21 (a full JDK, because the build needs `javac`) and the Android SDK with platform 37 (the
+`platforms;android-37.0` package of `sdkmanager`). Gradle comes with the wrapper, and the build downloads the
+build-tools it needs.
 
 1. Point the build at the SDK, either with `ANDROID_HOME` or with `sdk.dir` in `local.properties`. Android Studio
    writes that file, and git ignores it.
@@ -292,7 +343,7 @@ the wrapper.
 
 ```sh
 ./gradlew assembleRelease     # writes build/outputs/apk/release/islauncher-release.apk
-./gradlew testDebugUnitTest   # unit tests: layout model, search and its answers, Nova converter
+./gradlew testDebugUnitTest   # unit tests: layout model, search and its answers, Nova converter, blocks
 ```
 
 The build downloads Gradle and the dependencies. The app it produces has no network access.
@@ -339,10 +390,15 @@ These are the permissions `apkanalyzer manifest permissions` lists for a release
 | `android.permission.QUERY_ALL_PACKAGES` | Lists every installed app and every widget provider. That includes widget receivers that are not exported, which a `<queries>` block misses. Seeing every app is why the no-network rule matters. |
 | `android.permission.EXPAND_STATUS_BAR` | Swiping down opens the notification shade. |
 | `android.permission.REQUEST_DELETE_PACKAGES` | Uninstall in app menus and in "Not opened in a while". It only opens Android's own confirmation, which removes nothing until you accept. Granted at install. |
+| `android.permission.WRITE_SECURE_SETTINGS` | Blocks: turns the blocking service back on when it is turned off, and keeps the time automatic during a block. Only adb can grant it (`scripts/blocks-setup.sh`); without it there are no blocks. |
 | `io.github.gastoncampana.launcher.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | Added by AndroidX Core for its receiver helper on older Android versions. It is a signature permission, and nothing in this app is guarded by it. |
 
 There are no runtime permission prompts. Adding a widget may show Android's own dialog asking whether the launcher
 may create widgets.
+
+Blocks also use an accessibility service, notification access and a device admin with no policies. These are not
+permissions in the list above: each is turned on separately, over adb by `scripts/blocks-setup.sh`, and stays off
+without blocks.
 
 ## Known limitations
 
@@ -380,6 +436,24 @@ may create widgets.
   chain of short groups, such as `1500-200-3000`, still reads as one. Without a `+`, the last group must have four digits, as in
   Argentina and North America. WhatsApp gets the international form of the number, with the mobile 9 added for
   Argentina; WhatsApp Business is not offered.
+- **Blocks can be got around, with effort.**
+  - **Pages inside other apps:** a page shown inside another app (an in-app browser) is not checked; block that app.
+  - **adb:** from a computer, adb can remove the permissions or the app.
+  - **Factory reset:** a reset from recovery mode removes everything, the layout included.
+  - **Safe mode:** it stops the service, though it also stops every app you installed.
+  - **Outside its hours:** a block can be removed, even a minute before it starts.
+  - **Settings screens:** they are recognised by their class and title on Android 13 (Motorola); other makers may
+    name them differently.
+  - **Android 17's Advanced Protection:** it turns off accessibility services that are not accessibility tools,
+    this one included.
+- **Blocks leave some gaps.**
+  - **A moment on screen:** a blocked app or page shows for a moment (under a second) before it goes.
+  - **A browser open as a block with sites starts:** if its address bar is hidden then, it goes home once, as the
+    service reads address bars only during a block.
+  - **A blocked app's background work:** it keeps running in the background and is not stopped, though it is
+    silenced; audio that does not use Android's media controls is not paused.
+  - **Notification sound:** a notification can start its sound for a few milliseconds before it is snoozed.
+  - **Calls:** a call from a blocked app cannot be answered during the block.
 - **Swipe down depends on a non-public Android API.** There is no public way to open the notification shade, so a
   future Android version may block it.
 
@@ -391,17 +465,21 @@ Kotlin sources are in `src/main/kotlin/io/github/gastoncampana/launcher/`, and t
 | File | Contents |
 |---|---|
 | `build.gradle.kts`, `settings.gradle.kts`, `gradle.properties` | The single Gradle module and its AndroidX dependencies. |
-| `src/main/AndroidManifest.xml` | Permissions (INTERNET removed), the home activity and the pinned-shortcut activity. |
+| `src/main/AndroidManifest.xml` | Permissions (INTERNET removed), the home activity, the pinned-shortcut activity, and the blocks' accessibility service, notification listener and device admin. |
+| `src/main/res/xml/` | The blocking service's accessibility configuration and the device admin's (no policies). |
 | `src/main/res/values/`, `src/main/res/values-es/` | UI strings: English (the default) and Spanish. |
 | `src/main/res/resources.properties` | Names English as the default locale for the generated per-app language list. |
 | `Model.kt` | Pure logic: the layout model, grid placement, JSON persistence, app lookup, search and its answers (calculator, unit conversion, phone numbers, links and addresses), which shortcuts an app's menu lists and which apps count as not opened in a while. |
 | `Nova.kt` | A pure converter from a Nova backup's database rows and preferences to a layout. |
 | `NovaImport.kt` | Reads the `.novabackup` zip (`nova.db` and `nova.xml`). |
 | `Launcher.kt` | The home activity (app list, app shortcuts, widget hosting, opening and uninstalling apps, poisons, use scores, backups, Nova import), the shared layout state and `PinActivity` for pinned shortcuts. |
-| `Ui.kt` | The Compose UI: desktop, dock, search bar, drawer, menus and dialogs, the pause screen and the settings. |
-| `ModelTest.kt`, `NovaTest.kt` | Unit tests for the model and the Nova converter. |
+| `Blocks.kt` | Pure logic of blocks: weekly hours, until when something is blocked, what a running block may become, sites, reading a browser's address bar, the clock blocks go by, and their JSON. |
+| `Blocking.kt` | Blocks on Android: their store, the accessibility service that keeps apps and sites closed, the notification listener that snoozes and pauses, the device admin and the setup checks. |
+| `Ui.kt` | The Compose UI: desktop, dock, search bar, drawer, menus and dialogs, the pause screen, the settings and the block editor. |
+| `ModelTest.kt`, `NovaTest.kt`, `BlocksTest.kt` | Unit tests for the model, the Nova converter and blocks. |
 | `scripts/install.sh` | Builds and installs an update over adb without losing the default home choice. |
 | `scripts/release.sh` | Builds the APK for a release: runs the tests and checks the signature and the permissions. |
+| `scripts/blocks-setup.sh` | Sets blocks up over adb, once: the secure settings permission, the device admin, notification access and the accessibility service. |
 | `CLAUDE.md` | Invariants and architecture notes for contributors and coding agents. |
 
 ## License

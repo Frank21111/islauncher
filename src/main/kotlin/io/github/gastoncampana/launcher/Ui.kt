@@ -1,10 +1,12 @@
 package io.github.gastoncampana.launcher
 
 import android.app.SearchManager
+import android.app.admin.DevicePolicyManager
 import android.appwidget.AppWidgetHostView
 import android.appwidget.AppWidgetProviderInfo
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -33,6 +35,9 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LocalContentColor
@@ -41,6 +46,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
@@ -100,6 +106,7 @@ import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
@@ -181,6 +188,7 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.node.DelegatableNode
 import androidx.compose.ui.node.DrawModifierNode
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -192,6 +200,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.Typeface
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -212,7 +221,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asExecutor
 import kotlinx.coroutines.delay
+import java.net.IDN
 import java.text.DateFormat
+import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.TextStyle as DayStyle
+import java.util.Locale
 import java.text.NumberFormat
 import java.util.Date
 import kotlinx.coroutines.launch
@@ -275,6 +290,9 @@ sealed interface Popup {
     data object Numbers : Popup
     data object PausedApps : Popup
 
+    /** Ajustes → Bloqueos: the block of [id] to edit, or a new one (null). */
+    class EditBlock(val id: String?) : Popup
+
     /** Apps to tick, like the hidden ones: [ids] reads the set from a layout, [put] writes it back. */
     class Checklist(val title: String, val ids: (Layout) -> Set<AppId>, val put: (Layout, Set<AppId>) -> Layout) : Popup
 }
@@ -297,7 +315,8 @@ fun LauncherScreen(l: Launcher) {
                     Box(Modifier.graphicsLayer { alpha = if (mover.drag?.page == null && mover.drag != null) 0f else 1f }) { Drawer(l, mover) }
                 }
             }
-            if (l.settingsOpen) SettingsScreen(l)
+            // The block editor covers Ajustes whole: TalkBack must not reach what is underneath.
+            if (l.settingsOpen) Box(if (l.popup is Popup.EditBlock) Modifier.clearAndSetSemantics {} else Modifier) { SettingsScreen(l) }
             when (val p = l.popup) {
                 is Popup.PickApp -> AppPicker(l, p)
                 is Popup.Rename -> NameDialog(l, p)
@@ -308,6 +327,7 @@ fun LauncherScreen(l: Launcher) {
                 is Popup.Grid -> GridDialog(l, p)
                 is Popup.EditTab -> l.layout.tabs.getOrNull(p.index)?.let { TabDialog(l, p.index, it) }
                 is Popup.DockSetup -> l.layout.dock.getOrNull(p.page)?.getOrNull(p.slot)?.let { DockDialog(l, p, it) }
+                is Popup.EditBlock -> key(p) { BlockEditor(l, p) }
                 else -> Unit // menus render next to what they belong to
             }
         }
@@ -1913,6 +1933,14 @@ private val BACK: Glyph = { c ->
     line(c, 19.5f, 12f, 4.5f, 12f)
     line(c, 11f, 5.5f, 4.5f, 12f, 11f, 18.5f)
 }
+private val LOCK: Glyph = { c -> // a padlock: blocks, and one that runs
+    drawRoundRect(c, Offset(5f, 10.5f), Size(14f, 10f), CornerRadius(2f), style = LINE)
+    drawArc(c, 180f, 180f, false, Offset(8f, 3.5f), Size(8f, 8f), style = LINE)
+    line(c, 8f, 7.5f, 8f, 10.5f)
+    line(c, 16f, 7.5f, 16f, 10.5f)
+    line(c, 12f, 14.5f, 12f, 16.5f)
+}
+private val CHECK: Glyph = { c -> line(c, 5f, 12.5f, 10f, 17.5f, 19f, 7f) }
 private val UP: Glyph = { c -> line(c, 6f, 15f, 12f, 9f, 18f, 15f) }
 private val DOWN: Glyph = { c -> line(c, 6f, 9f, 12f, 15f, 18f, 9f) }
 private val NEXT: Glyph = { c -> line(c, 9f, 6f, 15f, 12f, 9f, 18f) }
@@ -1945,6 +1973,7 @@ private enum class Section(@StringRes val title: Int, val glyph: Glyph) {
     DRAWER(R.string.settings_drawer, APPS),
     DOCK(R.string.settings_dock, DOCK_BAR),
     GESTURES(R.string.settings_gestures, TAP),
+    BLOCKS(R.string.blocks, LOCK),
     BACKUP(R.string.settings_backup, RESTORE),
     TIDY(R.string.tidy, TRASH), // opened from DESKTOP or the guide, not from the main list
     UNUSED(R.string.unused, TRASH), // opened from DRAWER or the guide, not from the main list
@@ -1999,6 +2028,7 @@ private fun SettingsScreen(l: Launcher) {
                             l.update { it.copy(haptics = on) }
                         }
                     }
+                    Section.BLOCKS -> BlocksSettings(l)
                     Section.BACKUP -> BackupSettings(l)
                 }
             }
@@ -2023,6 +2053,12 @@ private fun MainList(l: Launcher, scroll: ScrollState, open: (Section) -> Unit) 
                     pluralStringResource(R.plurals.count_pages, layout.dock.size, layout.dock.size)
                 Section.GESTURES -> stringResource(R.string.settings_gestures_summary, l.nameOf(layout.doubleTap)) +
                     " · " + stringResource(if (layout.haptics) R.string.haptics else R.string.haptics_off)
+                Section.BLOCKS -> BlockStore.rules.let { rules ->
+                    if (rules.isEmpty()) stringResource(R.string.blocks_summary_none)
+                    else BlockStore.now().let { now -> rules.count { it.activeAt(now) } }.let { n ->
+                        pluralStringResource(R.plurals.count_blocks, rules.size, rules.size) + if (n > 0) " · " + pluralStringResource(R.plurals.blocks_running, n, n) else ""
+                    }
+                }
                 Section.BACKUP -> l.backupFolder?.let { stringResource(R.string.settings_backup_summary_weekly, folderName(l, it)) }
                     ?: stringResource(R.string.settings_backup_summary)
                 Section.TIDY, Section.UNUSED -> continue
@@ -2141,6 +2177,11 @@ private fun GuideSettings(welcome: Boolean, open: (Section) -> Unit) {
             Tip(R.string.guide_pause, R.plurals.guide_pause_how, null, PAUSE_SECONDS, PAUSE_STEP_SECONDS),
             Tip(R.string.poison_instead, R.string.guide_instead_how, Section.DRAWER),
             Tip(R.string.guide_poison_where, R.string.guide_poison_where_how),
+        ),
+        R.string.blocks to listOf(
+            Tip(R.string.blocks_add, R.string.guide_blocks_how, Section.BLOCKS),
+            Tip(R.string.guide_blocks_locked, R.string.guide_blocks_locked_how),
+            Tip(R.string.guide_blocks_limits, R.string.guide_blocks_limits_how),
         ),
         R.string.guide_gestures to listOf(
             Tip(R.string.guide_swipe_up, R.string.guide_swipe_up_how),
@@ -2730,6 +2771,357 @@ private fun GridDialog(l: Launcher, p: Popup.Grid) {
             }) { Text(stringResource(R.string.done)) }
         },
         dismissButton = { TextButton({ l.popup = null }) { Text(stringResource(R.string.cancel)) } },
+    )
+}
+
+// --- Ajustes → Bloqueos ---
+
+private const val MAX_BLOCK_NAME = 60
+private const val MAX_SITE_TYPED = 253 // a host name's longest
+
+/** A note in a section's grey, as Sin abrir hace tiempo starts. */
+@Composable
+private fun NoteText(text: String, color: Color = MaterialTheme.colorScheme.onSurfaceVariant) =
+    Text(text, Modifier.padding(start = 24.dp, end = 16.dp, top = 16.dp, bottom = 8.dp), color = color, fontSize = 14.sp, lineHeight = 17.sp)
+
+/** The adb commands of scripts/blocks-setup.sh but its last step, which the accessibility row does here once they ran. */
+private fun blockCommands(pkg: String) = listOf(
+    "adb shell pm grant $pkg android.permission.WRITE_SECURE_SETTINGS",
+    "adb shell dpm set-active-admin $pkg/.BlockAdmin",
+    "adb shell cmd notification allow_listener $pkg/.BlockListener",
+).joinToString("\n")
+
+/**
+ * Ajustes → Bloqueos: what blocks need ([BlockSetup]), the blocks, and the browsers a site block reads. The setup is read
+ * again on each return, as adb or Ajustes change it outside the app.
+ */
+@Composable
+private fun BlocksSettings(l: Launcher) {
+    val rules = BlockStore.rules
+    var refreshes by remember { mutableIntStateOf(0) }
+    val setup = remember(l.resumes, rules, refreshes) { l.blockSetup() }
+    val now by produceState(BlockStore.now(), rules) {
+        while (true) {
+            delay(30_000)
+            value = BlockStore.now()
+        }
+    }
+    NoteText(stringResource(R.string.blocks_note))
+    Header(stringResource(R.string.blocks_setup), divider = false)
+    @Composable
+    fun need(title: Int, on: Boolean, adbOnly: Boolean, open: () -> Unit) = SettingRow(
+        stringResource(title),
+        stringResource(if (on) R.string.blocks_on else if (adbOnly) R.string.blocks_off_adb else R.string.blocks_off_tap),
+        if (on || adbOnly) null else open,
+    ) { if (on) GlyphIcon(CHECK, MUTED, Modifier.padding(12.dp)) }
+    need(R.string.blocks_secure_settings, setup.secureSettings, adbOnly = true) {}
+    need(R.string.blocks_accessibility, setup.accessibility, adbOnly = false) {
+        // With the adb permission it turns itself on; else Ajustes does (Android may ask to allow restricted settings).
+        if (!l.enableBlockService()) l.startIntent(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS), l.getString(R.string.blocks_accessibility))
+        refreshes++
+    }
+    need(R.string.blocks_notifications, setup.notifications, adbOnly = false) {
+        l.startIntent(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS), l.getString(R.string.blocks_notifications))
+    }
+    need(R.string.blocks_admin, setup.admin, adbOnly = false) {
+        // Not through startIntent: Ajustes refuses this one in a new task.
+        try {
+            l.startActivity(
+                Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
+                    .putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, ComponentName(l, BlockAdmin::class.java))
+                    .putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, l.getString(R.string.blocks_admin_explain)),
+            )
+        } catch (e: RuntimeException) {
+            l.toast(l.getString(R.string.open_failed, l.getString(R.string.blocks_admin)))
+        }
+    }
+    if (!setup.complete) {
+        // Android shows its own note that something was copied.
+        SettingRow(stringResource(R.string.blocks_how), stringResource(R.string.blocks_how_summary), {
+            l.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("adb", blockCommands(l.packageName)))
+        })
+    }
+    SettingRow(stringResource(R.string.blocks_privacy), stringResource(R.string.blocks_privacy_summary))
+    Header(stringResource(R.string.blocks))
+    for (r in rules) {
+        val until = if (r.activeAt(now)) blockedUntil(listOf(r), now) else null
+        val summary = listOfNotNull(
+            until?.let { stringResource(R.string.blocks_running_until, l.untilText(it)) } ?: r.spans.joinToString("; ") { spanText(l, it) },
+            r.packages.size.takeIf { it > 0 }?.let { pluralStringResource(R.plurals.count_apps, it, it) },
+            r.sites.size.takeIf { it > 0 }?.let { pluralStringResource(R.plurals.count_sites, it, it) },
+        ).joinToString(" · ")
+        SettingRow(r.name.ifBlank { stringResource(R.string.blocks_unnamed) }, summary, { l.popup = Popup.EditBlock(r.id) }) {
+            if (until != null) GlyphIcon(LOCK, ACCENT, Modifier.padding(12.dp))
+        }
+    }
+    if (setup.complete) AddRow(stringResource(R.string.blocks_add)) { l.popup = Popup.EditBlock(null) }
+    else SettingRow(stringResource(R.string.blocks_add), stringResource(R.string.blocks_add_needs_setup))
+    if (rules.any { it.sites.isNotEmpty() }) {
+        Header(stringResource(R.string.blocks_browsers))
+        val browsers = remember(l.apps) { l.browserPackages() } // apps: a new list after each package change
+        for (app in l.apps.distinctBy { it.info.componentName.packageName }.filter { it.info.componentName.packageName in browsers }) {
+            val read = BlockStore.lastRead(app.info.componentName.packageName)
+            // Noon of that day: dayName's midnight UTC is the day before west of Greenwich.
+            SettingRow(app.label, read?.let { stringResource(R.string.blocks_browser_read, dayName(it.toEpochDay() + 0.5)) } ?: stringResource(R.string.blocks_browser_unread)) {
+                Box(Modifier.padding(end = 8.dp)) { AppImage(app, 36.dp) }
+            }
+        }
+    }
+    if (rules.isEmpty() && (setup.accessibility || setup.admin || setup.notifications)) {
+        Header(stringResource(R.string.settings_general))
+        SettingRow(stringResource(R.string.blocks_turn_off), stringResource(R.string.blocks_turn_off_summary), {
+            l.turnOffBlocks()
+            refreshes++
+            if (setup.notifications) l.startIntent(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS), l.getString(R.string.blocks_notifications))
+        })
+    }
+}
+
+/** "lun, mar, mié · 09:00–18:00", in the phone's language and time format. */
+private fun spanText(context: Context, s: Span): String {
+    val days = if (s.days.size == 7) context.getString(R.string.blocks_every_day)
+    else DayOfWeek.entries.filter { it in s.days }.joinToString(", ") { it.getDisplayName(DayStyle.SHORT_STANDALONE, Locale.getDefault()) }
+    return context.getString(R.string.blocks_span_summary, days, minuteText(context, s.start), minuteText(context, s.end % DAY_MINUTES))
+}
+
+/** Minute [m] of a day in the phone's time format: "18:00" or "6:00 p. m.". On a day with no clock change. */
+private fun minuteText(context: Context, m: Int): String =
+    android.text.format.DateFormat.getTimeFormat(context).format(Date.from(LocalDate.of(2001, 1, 1).atTime(m / 60, m % 60).atZone(ZoneId.systemDefault()).toInstant()))
+
+private fun problemText(p: RuleProblem) = when (p) {
+    RuleProblem.NOTHING_BLOCKED -> R.string.blocks_problem_nothing
+    RuleProblem.NO_SPANS -> R.string.blocks_problem_no_spans
+    RuleProblem.BAD_SPAN -> R.string.blocks_problem_bad_span
+    RuleProblem.NO_FREE_HOUR -> R.string.blocks_problem_free
+    RuleProblem.LOOSENED -> R.string.blocks_problem_loosened
+}
+
+/** What the block editor has open over it. */
+private enum class BlockDialog { APPS, HOURS }
+
+/**
+ * A block's name, apps, sites and hours, saved once [problemSaving] finds nothing. While the block runs, what it had
+ * stays (its trash only says so): only additions save, and it cannot be removed.
+ */
+@Composable
+private fun BlockEditor(l: Launcher, p: Popup.EditBlock) {
+    val old = remember { BlockStore.rules.firstOrNull { it.id == p.id } }
+    val blank = remember { old ?: Rule(BlockStore.newId(), "", emptySet(), emptySet(), emptyList()) }
+    var draft by remember { mutableStateOf(blank) }
+    val now by produceState(BlockStore.now()) {
+        while (true) {
+            delay(30_000)
+            value = BlockStore.now()
+        }
+    }
+    val until = old?.takeIf { it.activeAt(now) }?.let { blockedUntil(listOf(it), now) }
+    val kept = if (until != null) old else null
+    var dialog by remember { mutableStateOf<BlockDialog?>(null) }
+    var typed by remember { mutableStateOf("") }
+    val close = { l.popup = null }
+    BackHandler(onBack = close)
+    val addSite = {
+        val host = site(typed)
+        if (host == null) l.toast(l.getString(R.string.blocks_site_invalid))
+        else {
+            draft = draft.copy(sites = draft.sites + host)
+            typed = ""
+        }
+    }
+    val save = {
+        // Checked again as it is: the block may have started since the screen opened.
+        val current = BlockStore.rules
+        val before = current.firstOrNull { it.id == draft.id }
+        val problem = problemSaving(draft, before, BlockStore.now())
+        if (problem != null) l.toast(l.getString(problemText(problem)))
+        else {
+            BlockStore.save(if (before == null) current + draft else current.map { if (it.id == draft.id) draft else it })
+            l.guardBlocks()
+            close()
+        }
+    }
+    @Composable
+    fun Trash(isKept: Boolean, onClick: () -> Unit) =
+        IconAction(TRASH, stringResource(R.string.remove), tint = if (isKept) TAB_OFF else MUTED) { if (isKept) l.toast(l.getString(R.string.blocks_kept)) else onClick() }
+    Surface(Modifier.fillMaxSize(), color = Color.Black, contentColor = MaterialTheme.colorScheme.onSurface) {
+        Column(Modifier.navigationBarsPadding().imePadding()) {
+            Bar(stringResource(if (old == null) R.string.blocks_new else R.string.blocks_edit), close)
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                until?.let { NoteText(stringResource(R.string.blocks_locked, l.untilText(it)), ACCENT) }
+                GatedHaptics(l) {
+                    OutlinedTextField(
+                        draft.name,
+                        { draft = draft.copy(name = it.take(MAX_BLOCK_NAME)) },
+                        Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, top = 16.dp),
+                        label = { Text(stringResource(R.string.blocks_name)) },
+                        singleLine = true,
+                    )
+                }
+                Header(stringResource(R.string.blocks_apps))
+                val byPackage = l.apps.associateBy { it.info.componentName.packageName }
+                for (pkg in draft.packages.sortedBy { fold(byPackage[it]?.label ?: it) }) {
+                    val app = byPackage[pkg]
+                    SettingRow(app?.label ?: pkg) {
+                        Box(Modifier.padding(end = 8.dp)) { AppImage(app, 36.dp) }
+                        Trash(kept?.packages?.contains(pkg) == true) { draft = draft.copy(packages = draft.packages - pkg) }
+                    }
+                }
+                AddRow(stringResource(R.string.blocks_pick_apps)) { dialog = BlockDialog.APPS }
+                Header(stringResource(R.string.blocks_sites))
+                NoteText(stringResource(R.string.blocks_site_note))
+                Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) {
+                        GatedHaptics(l) {
+                            OutlinedTextField(
+                                typed,
+                                { typed = it.take(MAX_SITE_TYPED) },
+                                Modifier.fillMaxWidth(),
+                                placeholder = { Text("youtube.com") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = { addSite() }),
+                            )
+                        }
+                    }
+                    TextButton(addSite, enabled = typed.isNotBlank()) { Text(stringResource(R.string.add)) }
+                }
+                for (host in draft.sites.sorted()) {
+                    SettingRow(IDN.toUnicode(host)) { Trash(kept?.sites?.contains(host) == true) { draft = draft.copy(sites = draft.sites - host) } }
+                }
+                Header(stringResource(R.string.blocks_hours))
+                draft.spans.forEachIndexed { i, s ->
+                    SettingRow(spanText(l, s)) { Trash(kept?.spans?.contains(s) == true) { draft = draft.copy(spans = draft.spans.filterIndexed { j, _ -> j != i }) } }
+                }
+                AddRow(stringResource(R.string.blocks_add_hours)) { dialog = BlockDialog.HOURS }
+                if (old != null) {
+                    Header(stringResource(R.string.settings_general))
+                    val remove = if (until != null) null else ({
+                        l.popup = Popup.Confirm(
+                            l.getString(R.string.blocks_remove_title, old.name.ifBlank { l.getString(R.string.blocks_unnamed) }),
+                            l.getString(R.string.blocks_remove_text),
+                            l.getString(R.string.remove),
+                        ) {
+                            val current = BlockStore.rules.firstOrNull { it.id == old.id }
+                            if (current != null && canRemove(current, BlockStore.now())) BlockStore.save(BlockStore.rules - current)
+                            else if (current != null) l.toast(l.getString(R.string.blocks_problem_loosened))
+                        }
+                    })
+                    SettingRow(stringResource(R.string.blocks_remove), until?.let { stringResource(R.string.blocks_remove_locked, l.untilText(it)) }, remove) {
+                        GlyphIcon(TRASH, if (until == null) ACCENT else TAB_OFF, Modifier.padding(12.dp))
+                    }
+                }
+            }
+            val changed = draft != blank
+            val problem = problemSaving(draft, old, now)
+            Row(Modifier.fillMaxWidth().background(BAR).padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (changed && problem != null) stringResource(problemText(problem)) else "",
+                    Modifier.weight(1f).padding(end = 12.dp),
+                    color = ACCENT,
+                    fontSize = 14.sp,
+                    lineHeight = 17.sp,
+                )
+                Button(save, enabled = changed && problem == null, colors = ButtonDefaults.buttonColors(containerColor = ACCENT, contentColor = Color.Black)) {
+                    Text(stringResource(R.string.blocks_save))
+                }
+            }
+        }
+    }
+    when (dialog) {
+        BlockDialog.APPS -> BlockAppsDialog(l, draft.packages, kept?.packages.orEmpty(), { pkg ->
+            draft = draft.copy(packages = if (pkg in draft.packages) draft.packages - pkg else draft.packages + pkg)
+        }) { dialog = null }
+        BlockDialog.HOURS -> SpanDialog(l, { s ->
+            draft = draft.copy(spans = draft.spans + s)
+            dialog = null
+        }) { dialog = null }
+        null -> Unit
+    }
+}
+
+/** The apps a block can hold, by package (every activity and profile of it), ticked first; [kept] cannot be unticked. */
+@Composable
+private fun BlockAppsDialog(l: Launcher, chosen: Set<String>, kept: Set<String>, onToggle: (String) -> Unit, onDismiss: () -> Unit) {
+    var query by remember { mutableStateOf("") }
+    val safe = remember { l.unblockable() }
+    val first = remember { chosen } // ticked first, in the order the list opened with, so a tap does not move the row away
+    val apps = remember(l.apps) { l.apps.distinctBy { it.info.componentName.packageName }.filter { it.info.componentName.packageName !in safe } }
+    PickerDialog(l, stringResource(R.string.blocks_pick_apps), query, { query = it }, onDismiss) {
+        items(search(apps.sortedByDescending { it.info.componentName.packageName in first }, query) { it.label }, key = { it.id }) { app ->
+            val pkg = app.info.componentName.packageName
+            PickerRow(app.icon, app.label, checked = pkg in chosen) { if (pkg in kept) l.toast(l.getString(R.string.blocks_kept)) else onToggle(pkg) }
+        }
+    }
+}
+
+/** A new range: days to tick, then a start and an end, each through a clock; an end before the start is the next day. */
+@Composable
+private fun SpanDialog(l: Launcher, onDone: (Span) -> Unit, onDismiss: () -> Unit) {
+    var days by remember { mutableStateOf(setOf(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY)) }
+    var start by remember { mutableIntStateOf(9 * 60) }
+    var end by remember { mutableIntStateOf(18 * 60) }
+    var picking by remember { mutableStateOf<Boolean?>(null) } // true: the start, false: the end
+    val haptic = rememberHaptic(l)
+    val span = span(days, start, end)
+    val locale = LocalConfiguration.current.locales[0] // observed: the day names follow a language change
+    @Composable
+    fun TimeRow(label: Int, minutes: Int, onClick: () -> Unit) = Row(
+        Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(stringResource(label), Modifier.weight(1f), fontSize = 16.sp)
+        Text(minuteText(l, minutes), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 16.sp)
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { DialogTitle(stringResource(R.string.blocks_add_hours)) },
+        text = {
+            Column {
+                Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
+                    for (d in DayOfWeek.entries) {
+                        val on = d in days
+                        Box(
+                            Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(if (on) ACCENT else TAB_OFF)
+                                .toggleable(on, role = Role.Checkbox) {
+                                    days = if (it) days + d else days - d
+                                    haptic(if (it) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)
+                                }
+                                .semantics { contentDescription = d.getDisplayName(DayStyle.FULL_STANDALONE, locale) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(d.getDisplayName(DayStyle.NARROW_STANDALONE, locale), Modifier.clearAndSetSemantics {}, color = if (on) Color.Black else TAB_OFF_TEXT, fontSize = 14.sp)
+                        }
+                    }
+                }
+                TimeRow(R.string.blocks_from, start) { picking = true }
+                TimeRow(R.string.blocks_to, end % DAY_MINUTES) { picking = false }
+                if (span.end < span.start) Text(stringResource(R.string.blocks_next_day), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+            }
+        },
+        confirmButton = { TextButton({ onDone(span) }, enabled = span.valid) { Text(stringResource(R.string.add)) } },
+        dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
+    picking?.let { first ->
+        TimeDialog(if (first) start else end % DAY_MINUTES, { m ->
+            if (first) start = m else end = m
+            picking = null
+        }) { picking = null }
+    }
+}
+
+/** Material's clock face, in the phone's 12- or 24-hour format. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TimeDialog(minutes: Int, onDone: (Int) -> Unit, onDismiss: () -> Unit) {
+    val state = rememberTimePickerState(minutes / 60, minutes % 60, android.text.format.DateFormat.is24HourFormat(LocalContext.current))
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        text = { TimePicker(state) },
+        confirmButton = { TextButton({ onDone(state.hour * 60 + state.minute) }) { Text(stringResource(R.string.done)) } },
+        dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 

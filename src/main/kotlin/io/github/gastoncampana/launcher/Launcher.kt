@@ -194,6 +194,8 @@ class Launcher : ComponentActivity() {
         private set
     var today by mutableStateOf("")
         private set
+    var resumes by mutableIntStateOf(0) // bumped on each return, so Ajustes reads again what may have changed meanwhile
+        private set
     var cellSize = DpSize(90.dp, 150.dp) // measured by the desktop; sizes new widgets
     /** ISO code of the phone's country, upper case: its SIM's, else its network's, else the locale's; read on each return home. */
     var country = ""
@@ -226,6 +228,7 @@ class Launcher : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
         Layouts.init(this)
+        BlockStore.init(this)
         onBackPressedDispatcher.addCallback(this) { closeAll() } // a launcher never finishes on back
         launcherApps.registerCallback(packageCallback)
         val dates = IntentFilter().apply {
@@ -258,6 +261,7 @@ class Launcher : ComponentActivity() {
         super.onStart()
         host.startListening()
         autoBackup()
+        guardBlocks() // as Home comes back: the blocking service may have been turned off meanwhile
         val phone = getSystemService(TelephonyManager::class.java) // neither country needs a permission
         country = listOfNotNull(phone?.simCountryIso, phone?.networkCountryIso, Locale.getDefault().country)
             .firstOrNull { it.isNotEmpty() }.orEmpty().uppercase(Locale.ROOT)
@@ -266,6 +270,7 @@ class Launcher : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         updateToday() // the midnight broadcast is missed while the screen is off
+        resumes++
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -392,13 +397,24 @@ class Launcher : ComponentActivity() {
 
     fun packageOf(app: App) = app.info.componentName.packageName to app.info.user
 
-    /** Opens a poison app (or one of its shortcuts) only through the pause screen; [open] says whether it started. */
+    /**
+     * Opens a poison app (or one of its shortcuts) only through the pause screen; [open] says whether it started. An
+     * app a block holds does not open at all, and that is no open: never counted.
+     */
     private fun pauseIfPoison(app: App?, open: () -> Boolean) {
+        if (blocked(app?.info?.componentName?.packageName)) return
         if (app != null && isPoison(app)) {
             popup = Popup.Pause(app) { if (open()) countUse(app) } // only its day: a poison gains no rank
             return
         }
         if (open()) app?.let(::countUse) // only once it started, so a failed open never counts
+    }
+
+    /** Whether a running block holds [pkg] ([BlockStore]); a toast says until when. The blocking service would send it home anyway. */
+    private fun blocked(pkg: String?): Boolean {
+        val until = pkg?.let { BlockStore.appBlockedUntil(it) } ?: return false
+        toast(getString(R.string.blocked_app_until, untilText(until)))
+        return true
     }
 
     // How much each app is used, as "<package>#<user>" to "<score> <day>" (see [decayed]), so search can put it first
@@ -487,6 +503,7 @@ class Launcher : ComponentActivity() {
     fun startIntent(intent: Intent, what: String) {
         val pkg = intent.`package` ?: intent.resolveActivity(packageManager)?.packageName
         val app = apps.firstOrNull { it.info.componentName.packageName == pkg && it.info.user == Process.myUserHandle() }
+        if (app == null && blocked(pkg)) return // an app the list lacks (no launcher entry) is held by its package too
         pauseIfPoison(app) { orToast(what) { startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
     }
 
