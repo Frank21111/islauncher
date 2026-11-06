@@ -15,6 +15,20 @@ import java.time.DayOfWeek
 import java.time.LocalDateTime
 
 class BlocksTest {
+    @Test
+    fun setupRequiresAllUserAccessButNotSecureSettings() {
+        for (secure in listOf(false, true)) {
+            for (accessibility in listOf(false, true)) {
+                for (notifications in listOf(false, true)) {
+                    for (admin in listOf(false, true)) {
+                        assertEquals(accessibility && notifications && admin,
+                            BlockSetup(secure, accessibility, notifications, admin).complete)
+                    }
+                }
+            }
+        }
+    }
+
     private val weekdays = setOf(MONDAY, TUESDAY, WEDNESDAY, DayOfWeek.THURSDAY, FRIDAY)
     private val work = Rule("w", "Trabajo", setOf("com.instagram.android"), setOf("youtube.com"), listOf(span(weekdays, 9 * 60, 18 * 60)))
     private val night = Rule("n", "Noche", setOf("com.instagram.android"), emptySet(), listOf(span(DayOfWeek.entries.toSet(), 23 * 60, 7 * 60)))

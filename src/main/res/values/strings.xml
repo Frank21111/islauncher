@@ -397,14 +397,14 @@
     <string name="blocks_note">During its hours a block keeps its apps from opening and its sites from showing in any browser, snoozes their notifications until it ends and pauses their sound. While it runs it can only grow: it can\'t be removed or shortened.</string>
     <string name="blocks_setup">Setup</string>
     <string name="blocks_secure_settings">Secure settings permission</string>
-    <string name="blocks_accessibility">Accessibility service</string>
-    <string name="blocks_notifications">Notification access</string>
-    <string name="blocks_admin">Device admin</string>
+    <string name="blocks_accessibility">1. Accessibility service</string>
+    <string name="blocks_notifications">2. Notification access</string>
+    <string name="blocks_admin">3. Device admin</string>
     <string name="blocks_on">On</string>
-    <string name="blocks_off_adb">Missing: only adb can give it</string>
+    <string name="blocks_off_adb">Optional: requires ADB</string>
     <string name="blocks_off_tap">Missing: tap to turn it on</string>
-    <string name="blocks_how">How to set it up</string>
-    <string name="blocks_how_summary">Once, with the phone connected by USB to a computer with USB debugging on: run scripts/blocks-setup.sh from Islauncher\'s source, or tap to copy its commands. No account is removed.</string>
+    <string name="blocks_how">Enable additional protection with ADB</string>
+    <string name="blocks_how_summary">Optional: run scripts/blocks-setup.sh with USB debugging enabled, or tap to copy the commands. Blocks do not require this step. No account is removed.</string>
     <string name="blocks_admin_explain">Keeps Islauncher from being uninstalled while its blocks run. It asks for no other power over the phone.</string>
     <string name="blocks_privacy">What it reads</string>
     <string name="blocks_privacy_summary">The accessibility service can see the screen and notification access every notification. Islauncher uses only the app in front, a browser\'s address bar and a notification\'s app; it keeps none of it and has no network permission.</string>
@@ -416,7 +416,7 @@
     <string name="blocks_browser_read">Its address bar was read on %s: sites are blocked one by one</string>
     <string name="blocks_browser_unread">Not read yet: if its address bar can\'t be read, it is blocked whole during blocks with sites</string>
     <string name="blocks_turn_off">Turn blocks off</string>
-    <string name="blocks_turn_off_summary">Turns the device admin and the accessibility service off; then turn notification access off</string>
+    <string name="blocks_turn_off_summary">Removes device admin. Without ADB, turn accessibility off in the Android screen that opens, then turn notification access off in its setup row.</string>
     <string name="blocks_new">New block</string>
     <string name="blocks_edit">Block</string>
     <string name="blocks_name">Name</string>
@@ -444,9 +444,16 @@
     <string name="blocks_remove_locked">It can be removed once it ends: %s</string>
     <string name="blocks_remove_title">Remove “%s”?</string>
     <string name="blocks_remove_text">Its apps and sites can be used again.</string>
-    <string name="guide_blocks_how">Settings → Blocks: apps, sites and hours. It needs a setup over adb once, with no account removed</string>
+    <string name="guide_blocks_how">Settings → Blocks: follow the three access steps on the phone, then choose apps, sites and hours. ADB is optional for additional protection</string>
     <string name="guide_blocks_locked">While a block runs</string>
     <string name="guide_blocks_locked_how">It can only grow. Its apps go home whatever opens them, its sites go back in any browser, their notifications wait until it ends, their sound pauses, and the settings that would undo it are out of reach</string>
     <string name="guide_blocks_limits">What it does not stop</string>
     <string name="guide_blocks_limits_how">Pages shown inside other apps, adb from a computer, a factory reset, and anything outside its hours, when it can be removed</string>
+    <string name="blocks_setup_steps">Complete these three steps in order. Tap each missing access, enable Islauncher in Android, then return here. The status updates when you return.</string>
+    <string name="blocks_setup_ready">Setup complete. You can now add blocks without a computer.</string>
+    <string name="blocks_restricted">Android blocked an access?</string>
+    <string name="blocks_restricted_summary">Open App info, then the menu at the top → Allow restricted settings, and confirm. Return here and retry the missing step. This option only appears when Android restricts a sideloaded app.</string>
+    <string name="blocks_protection">Additional protection (optional)</string>
+    <string name="blocks_protection_basic">Blocks work without ADB. If you disable accessibility, Islauncher cannot turn it back on automatically or enforce automatic date and time during a block. Android may still let you stop the service.</string>
+    <string name="blocks_protection_on">Additional protection enabled: Islauncher can restore accessibility and keep date and time automatic during blocks.</string>
 </resources>

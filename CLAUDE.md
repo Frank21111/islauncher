@@ -21,7 +21,7 @@ and a notification's package and key, and log or keep none of it beyond the bloc
   Home asks which launcher to use). The script stops the app first and warns if the choice was lost anyway.
 - Unit tests: `./gradlew testDebugUnitTest`
 - Build a GitHub release APK: `scripts/release.sh` (tests, signature and no-INTERNET checks, SHA-256 for the notes).
-- Set blocks up on the USB-connected phone, once: `scripts/blocks-setup.sh` (secure settings permission, device admin,
+- Optional reinforced block setup on the USB-connected phone: `scripts/blocks-setup.sh` (secure settings permission, device admin,
   notification access, accessibility service; no account removed, unlike a device owner).
 - Build machine: JDK 21 (`JAVA_HOME`) and the SDK in `~/Android/Sdk` (`local.properties`), platform 37.0.
 - Make it the default: Ajustes → Apps → Apps predeterminadas → App de inicio.
@@ -126,7 +126,7 @@ the time automatic during a block).
   With `hideSuspended`, `Launcher.hides` keeps a paused app's desktop icons and dock taps from being drawn (the item
   stays saved, so its spot stays taken, though a long press there opens the desktop menu) and `Launcher.tabbed` leaves
   it out of the tabs; search lists `apps`, and one dragged from there is placed with a toast saying it is paused.
-  Bloqueos is `Section.BLOCKS` (`BlocksSettings`): the setup rows (read again on each `Launcher.resumes`), the blocks,
+  Bloqueos is `Section.BLOCKS` (`BlocksSettings`): the three user-granted setup steps (read again on each `Launcher.resumes`), optional secure settings protection, the blocks,
   the browsers and whether their bar was read; `Popup.EditBlock` is the full-screen `BlockEditor`, whose trash on what
   a running block had only says so, and whose save checks `problemSaving` again as it saves.
 - The layout is stored as JSON in SharedPreferences `launcher`, key `layout`; key `launched` marks the first launch, for

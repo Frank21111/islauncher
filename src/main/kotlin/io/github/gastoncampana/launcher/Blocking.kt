@@ -163,9 +163,9 @@ fun Context.browserPackages(): Set<String> = packageManager.queryIntentActivitie
     PackageManager.MATCH_ALL,
 ).mapTo(HashSet()) { it.activityInfo.packageName }
 
-/** What blocks need, given once over adb (scripts/blocks-setup.sh), so that none of it can be turned off in two taps. */
+/** Required user-granted access; secure settings adds optional protection against disabling the service. */
 class BlockSetup(val secureSettings: Boolean, val accessibility: Boolean, val notifications: Boolean, val admin: Boolean) {
-    val complete get() = secureSettings && accessibility && notifications && admin
+    val complete get() = accessibility && notifications && admin
 }
 
 fun Context.blockSetup() = BlockSetup(

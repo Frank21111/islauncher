@@ -44,8 +44,7 @@ permission, so that knowledge has nowhere to go: no analytics, no crash reportin
   become actions. Apps you use more rise to the top, and that score never leaves the phone.
 - **Poisons.** Mark the apps that eat your time, and they open only after a pause that grows with each open that day.
 - **Blocks.** Keep apps and sites closed during the hours you choose, in any browser, with their notifications held
-  until the block ends. While a block runs it can only grow. It needs a one-time setup over adb, with no account
-  removed.
+  until the block ends. While a block runs it can only grow. Set it up on the phone; ADB is optional for additional protection.
 - **Move in from Nova.** Import a `.novabackup` with your pages, dock, tabs and hidden apps.
 - **Backups stay on the phone.** Save the layout by hand or weekly, to local storage only.
 - **Nothing to discover by accident.** Settings → Guide shows what every part of the app can do.
@@ -59,9 +58,7 @@ language settings (Settings → System → Languages → App languages, or the a
 2. Open it on the phone and allow installs from that app when Android asks. Play Protect may warn you, because the app
    does not come from Google Play.
 3. Press Home and pick Islauncher, then "Always". The launcher's own settings also have a row for this.
-4. Optional, for [blocks](#features): with the phone connected over USB and USB debugging on, run
-   `scripts/blocks-setup.sh` from a clone of this repository once, or the adb commands Settings → Blocks copies. No
-   account is removed.
+4. Optional, for [blocks](#features): open Settings → Blocks and follow the three access steps. No computer is required.
 
 Moving from Nova? Export a backup there, then import it from Settings → Backup in Islauncher.
 
@@ -246,11 +243,15 @@ A launcher sees every app you have and every app you open, so this one is built 
   again whenever a link leads to another site. A browser whose address bar cannot be read in its first two and a half
   seconds goes home during a block with sites. Settings → Blocks lists the browsers and whether their address bar
   was read.
-- **Setup, once:** with the phone connected over USB and USB debugging on, run `scripts/blocks-setup.sh`, or the
-  commands Settings → Blocks copies. It grants the secure settings permission (so the app can turn its service back
-  on and keep the time automatic), activates a device admin with no policies (so the app cannot be uninstalled while
-  it is active), and turns on notification access and the accessibility service. No account is touched. With no
-  blocks left, Settings → Blocks → Turn blocks off undoes it, except notification access, which only you can turn off.
+- **Setup, once:** open Settings → Blocks and follow the three steps to enable accessibility, notification
+  access and device admin in Android. Return after each step to see its status. If Android restricts an access,
+  use the help row to open App info → menu → Allow restricted settings, then retry.
+- **Optional additional protection:** run `scripts/blocks-setup.sh` with USB debugging enabled, or copy the
+  commands from Settings → Blocks. This grants secure settings access, allowing the app to restore its
+  accessibility service and keep date and time automatic during a block. Without it, blocks still work but
+  cannot restore a disabled service or enforce automatic time. No account is touched.
+- With no blocks left, Settings → Blocks → Turn blocks off removes device admin. Without secure settings access,
+  turn accessibility off manually in the Android screen it opens, then notification access from its setup row.
 - See [Known limitations](#known-limitations) for what a block does not stop.
 
 </details>
@@ -390,14 +391,14 @@ These are the permissions `apkanalyzer manifest permissions` lists for a release
 | `android.permission.QUERY_ALL_PACKAGES` | Lists every installed app and every widget provider. That includes widget receivers that are not exported, which a `<queries>` block misses. Seeing every app is why the no-network rule matters. |
 | `android.permission.EXPAND_STATUS_BAR` | Swiping down opens the notification shade. |
 | `android.permission.REQUEST_DELETE_PACKAGES` | Uninstall in app menus and in "Not opened in a while". It only opens Android's own confirmation, which removes nothing until you accept. Granted at install. |
-| `android.permission.WRITE_SECURE_SETTINGS` | Blocks: turns the blocking service back on when it is turned off, and keeps the time automatic during a block. Only adb can grant it (`scripts/blocks-setup.sh`); without it there are no blocks. |
+| `android.permission.WRITE_SECURE_SETTINGS` | Blocks: turns the blocking service back on when it is turned off, and keeps the time automatic during a block. Only adb can grant it (`scripts/blocks-setup.sh`); optional: blocks work without it. |
 | `io.github.gastoncampana.launcher.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | Added by AndroidX Core for its receiver helper on older Android versions. It is a signature permission, and nothing in this app is guarded by it. |
 
 There are no runtime permission prompts. Adding a widget may show Android's own dialog asking whether the launcher
 may create widgets.
 
 Blocks also use an accessibility service, notification access and a device admin with no policies. These are not
-permissions in the list above: each is turned on separately, over adb by `scripts/blocks-setup.sh`, and stays off
+permissions in the list above: each is turned on separately, in Settings → Blocks or over adb by `scripts/blocks-setup.sh`, and stays off
 without blocks.
 
 ## Known limitations

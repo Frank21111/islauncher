@@ -413,14 +413,14 @@
     <string name="blocks_note">Durante sus horarios, un bloqueo no deja abrir sus apps ni ver sus sitios en ningún navegador, pospone sus notificaciones hasta que termina y pausa su sonido. Mientras corre solo puede agrandarse: no se puede quitar ni achicar.</string>
     <string name="blocks_setup">Activación</string>
     <string name="blocks_secure_settings">Permiso de ajustes seguros</string>
-    <string name="blocks_accessibility">Servicio de accesibilidad</string>
-    <string name="blocks_notifications">Acceso a notificaciones</string>
-    <string name="blocks_admin">Administrador del dispositivo</string>
+    <string name="blocks_accessibility">1. Servicio de accesibilidad</string>
+    <string name="blocks_notifications">2. Acceso a notificaciones</string>
+    <string name="blocks_admin">3. Administrador del dispositivo</string>
     <string name="blocks_on">Activado</string>
-    <string name="blocks_off_adb">Falta: solo se da por adb</string>
+    <string name="blocks_off_adb">Opcional: requiere ADB</string>
     <string name="blocks_off_tap">Falta: tocá para activarlo</string>
-    <string name="blocks_how">Cómo activarlo</string>
-    <string name="blocks_how_summary">Una sola vez, con el teléfono conectado por USB a una computadora y la depuración USB activada: corré scripts/blocks-setup.sh del código de Islauncher, o tocá para copiar sus comandos. No se quita ninguna cuenta.</string>
+    <string name="blocks_how">Activar protección adicional con ADB</string>
+    <string name="blocks_how_summary">Opcional: corré scripts/blocks-setup.sh con la depuración USB activada, o tocá para copiar los comandos. Los bloqueos no requieren este paso. No se quita ninguna cuenta.</string>
     <string name="blocks_admin_explain">Impide desinstalar Islauncher mientras corren sus bloqueos. No pide ningún otro poder sobre el teléfono.</string>
     <string name="blocks_privacy">Qué lee</string>
     <string name="blocks_privacy_summary">El servicio de accesibilidad puede ver la pantalla y el acceso a notificaciones, todas las notificaciones. Islauncher usa solo la app que está al frente, la barra de direcciones de un navegador y la app de cada notificación; no guarda nada y no tiene permiso de red.</string>
@@ -432,7 +432,7 @@
     <string name="blocks_browser_read">Su barra de direcciones se leyó el %s: los sitios se bloquean uno por uno</string>
     <string name="blocks_browser_unread">Todavía no se leyó: si no se puede leer su barra de direcciones, se bloquea entero durante los bloqueos con sitios</string>
     <string name="blocks_turn_off">Desactivar los bloqueos</string>
-    <string name="blocks_turn_off_summary">Desactiva el administrador y el servicio de accesibilidad; después desactivá el acceso a notificaciones</string>
+    <string name="blocks_turn_off_summary">Quita el administrador. Sin ADB, apagá la accesibilidad en la pantalla de Android que se abre; después apagá el acceso a notificaciones desde su paso de activación.</string>
     <string name="blocks_new">Nuevo bloqueo</string>
     <string name="blocks_edit">Bloqueo</string>
     <string name="blocks_name">Nombre</string>
@@ -460,9 +460,16 @@
     <string name="blocks_remove_locked">Se va a poder quitar cuando termine: %s</string>
     <string name="blocks_remove_title">¿Quitar “%s”?</string>
     <string name="blocks_remove_text">Sus apps y sitios se van a poder usar de nuevo.</string>
-    <string name="guide_blocks_how">Ajustes → Bloqueos: apps, sitios y horarios. Necesita una activación por adb, una sola vez, sin quitar ninguna cuenta</string>
+    <string name="guide_blocks_how">Ajustes → Bloqueos: seguí los tres pasos de acceso en el teléfono y elegí apps, sitios y horarios. ADB es opcional para una protección adicional</string>
     <string name="guide_blocks_locked">Mientras corre un bloqueo</string>
     <string name="guide_blocks_locked_how">Solo puede agrandarse. Sus apps vuelven al inicio las abra lo que las abra, sus sitios vuelven atrás en cualquier navegador, sus notificaciones esperan a que termine, su sonido se pausa, y los ajustes que lo deshacen quedan fuera de alcance</string>
     <string name="guide_blocks_limits">Lo que no frena</string>
     <string name="guide_blocks_limits_how">Las páginas que se muestran dentro de otras apps, adb desde una computadora, un restablecimiento de fábrica, y todo lo que pase fuera de sus horarios, cuando se lo puede quitar</string>
+    <string name="blocks_setup_steps">Completá estos tres pasos en orden. Tocá cada acceso que falta, habilitá Islauncher en Android y volvé acá. El estado se actualiza al volver.</string>
+    <string name="blocks_setup_ready">Activación completa. Ya podés agregar bloqueos sin una computadora.</string>
+    <string name="blocks_restricted">¿Android bloqueó un acceso?</string>
+    <string name="blocks_restricted_summary">Abrí Info de la app y luego el menú superior → Permitir ajustes restringidos, y confirmá. Volvé acá y reintentá el paso pendiente. Esa opción solo aparece cuando Android restringe una app instalada por fuera de la tienda.</string>
+    <string name="blocks_protection">Protección adicional (opcional)</string>
+    <string name="blocks_protection_basic">Los bloqueos funcionan sin ADB. Si apagás la accesibilidad, Islauncher no puede reactivarla automáticamente ni mantener la fecha y hora automáticas durante un bloqueo. Android puede permitirte detener el servicio.</string>
+    <string name="blocks_protection_on">Protección adicional activada: Islauncher puede reactivar la accesibilidad y mantener la fecha y hora automáticas durante los bloqueos.</string>
 </resources>
