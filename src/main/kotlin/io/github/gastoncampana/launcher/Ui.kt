@@ -2807,14 +2807,15 @@ private fun BlocksSettings(l: Launcher) {
         }
     }
     NoteText(stringResource(R.string.blocks_note))
+    SettingRow(stringResource(R.string.blocks_privacy), stringResource(R.string.blocks_privacy_summary))
     Header(stringResource(R.string.blocks_setup), divider = false)
     @Composable
     fun need(title: Int, on: Boolean, adbOnly: Boolean, open: () -> Unit) = SettingRow(
         stringResource(title),
         stringResource(if (on) R.string.blocks_on else if (adbOnly) R.string.blocks_off_adb else R.string.blocks_off_tap),
-        if (on || adbOnly) null else open,
+        if (adbOnly) null else open,
     ) { if (on) GlyphIcon(CHECK, MUTED, Modifier.padding(12.dp)) }
-    need(R.string.blocks_secure_settings, setup.secureSettings, adbOnly = true) {}
+    NoteText(stringResource(if (setup.complete) R.string.blocks_setup_ready else R.string.blocks_setup_steps))
     need(R.string.blocks_accessibility, setup.accessibility, adbOnly = false) {
         // With the adb permission it turns itself on; else Ajustes does (Android may ask to allow restricted settings).
         if (!l.enableBlockService()) l.startIntent(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS), l.getString(R.string.blocks_accessibility))
@@ -2836,12 +2837,19 @@ private fun BlocksSettings(l: Launcher) {
         }
     }
     if (!setup.complete) {
+        SettingRow(stringResource(R.string.blocks_restricted), stringResource(R.string.blocks_restricted_summary), {
+            l.startIntent(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:${l.packageName}".toUri()), l.getString(R.string.blocks_restricted))
+        })
+    }
+    Header(stringResource(R.string.blocks_protection))
+    NoteText(stringResource(if (setup.secureSettings) R.string.blocks_protection_on else R.string.blocks_protection_basic))
+    need(R.string.blocks_secure_settings, setup.secureSettings, adbOnly = true) {}
+    if (!setup.secureSettings) {
         // Android shows its own note that something was copied.
         SettingRow(stringResource(R.string.blocks_how), stringResource(R.string.blocks_how_summary), {
             l.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("adb", blockCommands(l.packageName)))
         })
     }
-    SettingRow(stringResource(R.string.blocks_privacy), stringResource(R.string.blocks_privacy_summary))
     Header(stringResource(R.string.blocks))
     for (r in rules) {
         val until = if (r.activeAt(now)) blockedUntil(listOf(r), now) else null
@@ -2872,7 +2880,9 @@ private fun BlocksSettings(l: Launcher) {
         SettingRow(stringResource(R.string.blocks_turn_off), stringResource(R.string.blocks_turn_off_summary), {
             l.turnOffBlocks()
             refreshes++
-            if (setup.notifications) l.startIntent(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS), l.getString(R.string.blocks_notifications))
+            if (setup.accessibility && !setup.secureSettings) {
+                l.startIntent(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS), l.getString(R.string.blocks_accessibility))
+            } else if (setup.notifications) l.startIntent(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS), l.getString(R.string.blocks_notifications))
         })
     }
 }
